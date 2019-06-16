@@ -475,6 +475,7 @@ struct CfDef {
     45: optional i32 min_index_interval,
     46: optional i32 max_index_interval,
 
+    51: optional bool time_ordered_ck = false,
     /* All of the following are now ignored and unsupplied. */
 
     /** @deprecated */
