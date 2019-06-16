@@ -130,6 +130,13 @@ public abstract class DecoratedKey implements PartitionPosition, FilterKey
         return token;
     }
 
+    public long getFirstKeyAsLong() {
+        // TODO. remove the duplicate
+        ByteBuffer buffer = getKey().duplicate();
+        buffer.getShort();
+        return buffer.getLong();
+    }
+
     public abstract ByteBuffer getKey();
 
     public void filterHash(long[] dest)
