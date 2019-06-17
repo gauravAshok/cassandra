@@ -207,7 +207,9 @@ public class Tracker
                           Collections.emptyList(),
                           Collections.emptyMap(),
                           Collections.emptyMap(),
-                          SSTableIntervalTree.empty()));
+                          SSTableIntervalTree.empty(),
+                          cfstore != null && (cfstore.clusteringKeyOrderedByTime()),
+                          SSTableTimeIntervalTree.empty()));
     }
 
     public Throwable dropSSTablesIfInvalid(Throwable accumulate)

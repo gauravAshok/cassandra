@@ -23,7 +23,6 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.utils.Interval;
 import org.apache.cassandra.utils.IntervalTree;
-import org.apache.commons.collections.CollectionUtils;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -63,13 +62,14 @@ public class SSTableTimeIntervalTree extends IntervalTree<Long, SSTableReader, I
 
     static Interval<Long, Void> intervalFromClusteringKey(StatsMetadata metadata) {
 
-        long lb = CollectionUtils.isEmpty(metadata.minClusteringValues) ? Long.MIN_VALUE : getLongFromBuffer(metadata.minClusteringValues.get(0));
-        long ub = CollectionUtils.isEmpty(metadata.maxClusteringValues) ? Long.MAX_VALUE: getLongFromBuffer(metadata.maxClusteringValues.get(0));
+        long lb = (metadata.minClusteringValues == null || metadata.minClusteringValues.isEmpty()) ? Long.MIN_VALUE : getLongFromBuffer(metadata.minClusteringValues.get(0));
+        long ub = (metadata.maxClusteringValues == null || metadata.maxClusteringValues.isEmpty()) ? Long.MAX_VALUE: getLongFromBuffer(metadata.maxClusteringValues.get(0));
 
         return Interval.create(lb, ub);
     }
 
     static long getLongFromBuffer(ByteBuffer buffer) {
-        return buffer.getLong();
+        //TODO: get away with duplicate
+        return buffer.duplicate().getLong();
     }
 }

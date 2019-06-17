@@ -384,6 +384,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         return compactionStrategyManager.getCompactionParams().asMap();
     }
 
+    public boolean clusteringKeyOrderedByTime() {
+        return metadata.params.timeOrderedCK;
+    }
+
     public Map<String,String> getCompressionParameters()
     {
         return metadata.params.compression.asMap();
@@ -2654,6 +2658,22 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             return null;
 
         Keyspace keyspace = Keyspace.open(ksName);
+        if (keyspace == null)
+            return null;
+
+        UUID id = Schema.instance.getId(ksName, cfName);
+        if (id == null)
+            return null;
+
+        return keyspace.getColumnFamilyStore(id);
+    }
+
+    public static ColumnFamilyStore getWithoutInitiatingOpen(String ksName, String cfName)
+    {
+        if (ksName == null || cfName == null)
+            return null;
+
+        Keyspace keyspace = Keyspace.getWithoutOpening(ksName);
         if (keyspace == null)
             return null;
 
