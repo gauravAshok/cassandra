@@ -1145,7 +1145,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 return Collections.emptyList();
             }
 
-            List<Future<SSTableMultiWriter>> futures = new ArrayList<>();
+            List<Future<Pair<SSTableMultiWriter, SSTableMultiWriter>>> futures = new ArrayList<>();
             long totalBytesOnDisk = 0;
             long maxBytesOnDisk = 0;
             long minBytesOnDisk = Long.MAX_VALUE;
@@ -1172,7 +1172,16 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     if (flushNonCf2i)
                         indexManager.flushAllNonCFSBackedIndexesBlocking();
 
-                    flushResults = Lists.newArrayList(FBUtilities.waitOnFutures(futures));
+                    List<Pair<SSTableMultiWriter, SSTableMultiWriter>> sstablesResult = FBUtilities.waitOnFutures(futures);
+                    flushResults = new ArrayList<>(sstablesResult.size());
+                    for(Pair<SSTableMultiWriter, SSTableMultiWriter> sstablePair: sstablesResult)
+                    {
+                        flushResults.add(sstablePair.left);
+                        if(sstablePair.right != null)
+                        {
+                            flushResults.add(sstablePair.right);
+                        }
+                    }
                 }
                 catch (Throwable t)
                 {

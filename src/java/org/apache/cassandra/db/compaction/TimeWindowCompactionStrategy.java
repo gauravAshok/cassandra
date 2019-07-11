@@ -379,8 +379,6 @@ public class TimeWindowCompactionStrategy extends AbstractCompactionStrategy
 
         uncheckedOptions.remove(CompactionParams.Option.MIN_THRESHOLD.toString());
         uncheckedOptions.remove(CompactionParams.Option.MAX_THRESHOLD.toString());
-        // TWCS can work on time ordered data
-        uncheckedOptions.remove(CompactionParams.Option.CLUSTERING_KEY_ORDERED_BY_TIME.toString());
 
         return uncheckedOptions;
     }

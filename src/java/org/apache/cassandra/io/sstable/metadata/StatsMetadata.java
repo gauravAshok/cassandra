@@ -55,8 +55,8 @@ public class StatsMetadata extends MetadataComponent
     public final double compressionRatio;
     public final StreamingHistogram estimatedTombstoneDropTime;
     public final int sstableLevel;
-    public final List<ByteBuffer> minClusteringValues;
     public final List<ByteBuffer> maxClusteringValues;
+    public final List<ByteBuffer> minClusteringValues;
     public final boolean hasLegacyCounterShards;
     public final long repairedAt;
     public final long totalColumnsSet;

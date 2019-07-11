@@ -105,7 +105,7 @@ public class View
         this.compactingMap = compacting;
         this.compacting = compactingMap.keySet();
         this.intervalTree = intervalTree;
-        this.timeOrderedCK = isTimeOrderedCK(findKSCF());
+        this.timeOrderedCK = timeOrderedCK || isTimeOrderedCK(findKSCF());
 
         if(this.timeOrderedCK)
         {
