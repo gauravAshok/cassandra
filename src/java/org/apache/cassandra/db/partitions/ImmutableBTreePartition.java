@@ -38,7 +38,8 @@ public class ImmutableBTreePartition extends AbstractBTreePartition
                                       EncodingStats stats)
     {
         super(metadata, partitionKey);
-        this.holder = new Holder(columns, tree, deletionInfo, staticRow, stats);
+        // doesnt matter if it has tombstones or data
+        this.holder = new Holder(columns, tree, deletionInfo, staticRow, stats, RowTypes.ANY);
     }
 
     protected ImmutableBTreePartition(CFMetaData metadata,

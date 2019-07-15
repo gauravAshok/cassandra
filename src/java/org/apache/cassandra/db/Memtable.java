@@ -29,10 +29,7 @@ import org.apache.cassandra.db.commitlog.IntervalSet;
 import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
-import org.apache.cassandra.db.partitions.AbstractUnfilteredPartitionIterator;
-import org.apache.cassandra.db.partitions.AtomicBTreePartition;
-import org.apache.cassandra.db.partitions.Partition;
-import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Bounds;
@@ -555,14 +552,18 @@ public class Memtable implements Comparable<Memtable>
      */
     private static class TombstoneMaskUnfilteredRowIterator implements UnfilteredRowIterator
     {
+        private static final boolean optimizeFlush = Boolean.parseBoolean(System.getProperty("optimizeMemtableFlush", "false"));
+
         private final UnfilteredRowIterator baseIterator;
         private final boolean maskTombstones;
+        private final AbstractBTreePartition.RowTypes rowTypes;
 
         private Unfiltered item;
         private boolean itemConsumed = true;
 
         TombstoneMaskUnfilteredRowIterator(AtomicBTreePartition partition, boolean maskTombstones) {
             this.baseIterator = partition.unfilteredIterator();
+            this.rowTypes = partition.rowTypes();
             this.maskTombstones = !maskTombstones;
         }
 
@@ -646,6 +647,14 @@ public class Memtable implements Comparable<Memtable>
         @Override
         public boolean hasNext()
         {
+            if(optimizeFlush) {
+                if(maskTombstones && rowTypes == AbstractBTreePartition.RowTypes.TOMBSTONE)
+                    return false;
+
+                if(!maskTombstones && rowTypes == AbstractBTreePartition.RowTypes.DATA)
+                    return false;
+            }
+
             if(!itemConsumed)
                 return item != null;
 
