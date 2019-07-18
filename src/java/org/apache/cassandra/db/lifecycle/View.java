@@ -220,6 +220,16 @@ public class View
         return intervalTree.search(Interval.create(left, stopInTree));
     }
 
+    public Iterable<SSTableReader> liveSSTablesInTimeRange(long left, long right)
+    {
+        findAndLogKSCF("liveSSTablesInTimeRange");
+
+        if (timeIntervalTree.isEmpty())
+            return Collections.emptyList();
+
+        return timeIntervalTree.search(Interval.create(left, right));
+    }
+
     public static List<SSTableReader> sstablesInBounds(PartitionPosition left, PartitionPosition right, SSTableIntervalTree intervalTree)
     {
         assert !AbstractBounds.strictlyWrapsAround(left, right);

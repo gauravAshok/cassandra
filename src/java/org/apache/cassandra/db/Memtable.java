@@ -88,6 +88,9 @@ public class Memtable implements Comparable<Memtable>
 
     private static final int ROW_OVERHEAD_HEAP_SIZE = estimateRowOverhead(Integer.parseInt(System.getProperty("cassandra.memtable_row_overhead_computation_step", "100000")));
 
+    public static final int DATA_SSTABLE_LVL = 0;
+    public static final int TOMBSTONE_SSTABLE_LVL = 1;
+
     private final MemtableAllocator allocator;
     private final AtomicLong liveDataSize = new AtomicLong(0);
     private final AtomicLong currentOperations = new AtomicLong(0);
@@ -442,16 +445,16 @@ public class Memtable implements Comparable<Memtable>
 
             if (flushLocation == null)
             {
-                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile(estimatedSize)), columnsCollector.get(), statsCollector.get());
+                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile(estimatedSize)), columnsCollector.get(), statsCollector.get(), DATA_SSTABLE_LVL);
                 tombstoneWriter = split
-                        ? createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile((long) (keySize * 1.5))), columnsCollector.get(), statsCollector.get())
+                        ? createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile((long) (keySize * 1.5))), columnsCollector.get(), statsCollector.get(), TOMBSTONE_SSTABLE_LVL)
                         : null;
             }
             else
             {
-                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get());
+                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get(), DATA_SSTABLE_LVL);
                 tombstoneWriter = split
-                        ? createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get())
+                        ? createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get(), TOMBSTONE_SSTABLE_LVL)
                         : null;
             }
         }
@@ -523,13 +526,15 @@ public class Memtable implements Comparable<Memtable>
                 logger.trace("High update contention in {}/{} partitions of {} ", heavilyContendedRowCount, toFlush.size(), Memtable.this);
         }
 
+        // reusing level field for marking sstables as tombstone only table.
+        // 0 = normal data sstable, 1 = only tombstone sstable
         public SSTableMultiWriter createFlushWriter(LifecycleTransaction txn,
                                                   String filename,
                                                   PartitionColumns columns,
-                                                  EncodingStats stats)
+                                                  EncodingStats stats, int level)
         {
             MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata.comparator)
-                    .commitLogIntervals(new IntervalSet<>(commitLogLowerBound.get(), commitLogUpperBound.get()));
+                    .commitLogIntervals(new IntervalSet<>(commitLogLowerBound.get(), commitLogUpperBound.get())).sstableLevel(level);
 
             return cfs.createSSTableMultiWriter(Descriptor.fromFilename(filename),
                                                 toFlush.size(),

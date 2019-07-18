@@ -21,10 +21,10 @@ package org.apache.cassandra.db.lifecycle;
 import com.google.common.collect.Iterables;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Interval;
 import org.apache.cassandra.utils.IntervalTree;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -62,14 +62,9 @@ public class SSTableTimeIntervalTree extends IntervalTree<Long, SSTableReader, I
 
     static Interval<Long, Void> intervalFromClusteringKey(StatsMetadata metadata) {
 
-        long lb = (metadata.minClusteringValues == null || metadata.minClusteringValues.isEmpty()) ? Long.MIN_VALUE : getLongFromBuffer(metadata.minClusteringValues.get(0));
-        long ub = (metadata.maxClusteringValues == null || metadata.maxClusteringValues.isEmpty()) ? Long.MAX_VALUE: getLongFromBuffer(metadata.maxClusteringValues.get(0));
+        long lb = (metadata.minClusteringValues == null || metadata.minClusteringValues.isEmpty()) ? Long.MIN_VALUE : ByteBufferUtil.toLong(metadata.minClusteringValues.get(0));
+        long ub = (metadata.maxClusteringValues == null || metadata.maxClusteringValues.isEmpty()) ? Long.MAX_VALUE: ByteBufferUtil.toLong(metadata.maxClusteringValues.get(0));
 
         return Interval.create(lb, ub);
-    }
-
-    static long getLongFromBuffer(ByteBuffer buffer) {
-        //TODO: get away with duplicate
-        return buffer.duplicate().getLong();
     }
 }

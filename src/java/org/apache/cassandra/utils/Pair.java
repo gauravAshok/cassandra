@@ -57,4 +57,36 @@ public class Pair<T1, T2>
     {
         return new Pair<X, Y>(x, y);
     }
+
+    public static class Comparator<T1, T2> implements java.util.Comparator<Pair<T1, T2>> {
+
+        private final java.util.Comparator<T1> leftComparator;
+        private final java.util.Comparator<T2> rightComparator;
+
+        Comparator(java.util.Comparator<T1> leftComparator, java.util.Comparator<T2> rightComparator) {
+            this.leftComparator = leftComparator;
+            this.rightComparator = rightComparator;
+        }
+
+        @Override
+        public int compare(Pair<T1, T2> o1, Pair<T1, T2> o2)
+        {
+            if(o1 == o2)
+                return 0;
+
+            if (o2 == null) {
+                return 1;
+            } else if(o1 == null) {
+                return -1;
+            }
+
+            int t1Compare = leftComparator.compare(o1.left, o2.left);
+
+            if(t1Compare == 0) {
+                return rightComparator.compare(o1.right, o2.right);
+            }
+
+            return t1Compare;
+        }
+    }
 }
