@@ -84,11 +84,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
 
     private int getWindowIndex(DecoratedKey pk)
     {
-        ByteBuffer buffer = pk.getKey();
-
-        // The key is encoded: 2 byte encoding the length of data (8 in this case) and a long after that
-        long ts = buffer.getLong(buffer.position() + 2);
-
+        long ts = pk.getFirstKeyAsLong();
         long delta = TimeUnit.SECONDS.convert(ts, TimeUnit.MILLISECONDS) - windowStartInSec;
         return (int) (delta / windowSizeInSec);
     }
@@ -96,7 +92,6 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     @Override
     protected void switchCompactionLocation(DataDirectory directory)
     {
-
         // TODO: may have to consider the situation where directory is repeated.
         sstableDirectory = directory;
         ssTableWriters = new SSTableWriter[(int) windowCount];

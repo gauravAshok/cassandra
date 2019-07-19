@@ -17,15 +17,15 @@
  */
 package org.apache.cassandra.db;
 
-import java.nio.ByteBuffer;
-import java.util.Comparator;
-
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.dht.Token.KeyBound;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.MurmurHash;
 import org.apache.cassandra.utils.IFilter.FilterKey;
+import org.apache.cassandra.utils.MurmurHash;
+
+import java.nio.ByteBuffer;
+import java.util.Comparator;
 
 /**
  * Represents a decorated key, handy for certain operations
@@ -130,11 +130,11 @@ public abstract class DecoratedKey implements PartitionPosition, FilterKey
         return token;
     }
 
-    public long getFirstKeyAsLong() {
-        // TODO. remove the duplicate
-        ByteBuffer buffer = getKey().duplicate();
-        buffer.getShort();
-        return buffer.getLong();
+    public long getFirstKeyAsLong()
+    {
+        ByteBuffer buffer = getKey();
+        // The key is encoded: 2 byte encoding the length of data (8 in this case) and a long after that
+        return buffer.getLong(buffer.position() + 2);
     }
 
     public abstract ByteBuffer getKey();
