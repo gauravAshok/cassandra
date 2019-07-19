@@ -33,42 +33,48 @@ import java.util.concurrent.TimeUnit;
 
 public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
 {
-
-    private final int windowSizeInMin;
-    private final long windowStartInMin;
-    private final int windowCount;
+    private final long windowSizeInSec;
+    private final long windowStartInSec;
+    private final long windowCount;
+    private final int level;
     private final Set<SSTableReader> allSSTables;
     private SSTableWriter[] ssTableWriters;
     private Directories.DataDirectory sstableDirectory;
 
     public TimeBasedSplittingCompactionWriter(
-        ColumnFamilyStore cfs,
-        Directories directories,
-        LifecycleTransaction txn,
-        Set<SSTableReader> nonExpiredSSTables,
-        boolean keepOriginals,
-        int windowSizeInMin,
-        long windowStartInMin,
-        int windowCount) {
+            ColumnFamilyStore cfs,
+            Directories directories,
+            LifecycleTransaction txn,
+            Set<SSTableReader> nonExpiredSSTables,
+            boolean keepOriginals,
+            long windowSizeInSec,
+            long windowStartInMin,
+            long windowCount,
+            int level)
+    {
 
         super(cfs, directories, txn, nonExpiredSSTables, keepOriginals);
-        this.windowSizeInMin = windowSizeInMin;
-        this.windowStartInMin = windowStartInMin;
+        this.windowSizeInSec = windowSizeInSec;
+        this.windowStartInSec = windowStartInMin;
         this.windowCount = windowCount;
         this.allSSTables = txn.originals();
-        this.ssTableWriters = new SSTableWriter[windowCount];
+        this.level = level;
+        this.ssTableWriters = new SSTableWriter[(int) windowCount];
     }
 
     @Override
-    protected boolean realAppend(UnfilteredRowIterator partition) {
+    protected boolean realAppend(UnfilteredRowIterator partition)
+    {
 
         int windowIndex = getWindowIndex(partition.partitionKey());
 
-        if (ssTableWriters[windowIndex] == null) {
+        if (ssTableWriters[windowIndex] == null)
+        {
             ssTableWriters[windowIndex] = getSSTableWriter();
         }
 
-        if (sstableWriter.currentWriter() != ssTableWriters[windowIndex]) {
+        if (sstableWriter.currentWriter() != ssTableWriters[windowIndex])
+        {
             sstableWriter.switchWriter(ssTableWriters[windowIndex]);
         }
 
@@ -76,33 +82,37 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
         return rie != null;
     }
 
-    private int getWindowIndex(DecoratedKey pk) {
+    private int getWindowIndex(DecoratedKey pk)
+    {
+        ByteBuffer buffer = pk.getKey();
 
-        ByteBuffer buffer = pk.getKey().duplicate();
-        buffer.getShort();
-        long ts = buffer.getLong();
-        int delta = (int) (TimeUnit.MINUTES.convert(ts, TimeUnit.MILLISECONDS) - windowStartInMin);
-        return delta / windowSizeInMin;
+        // The key is encoded: 2 byte encoding the length of data (8 in this case) and a long after that
+        long ts = buffer.getLong(buffer.position() + 2);
+
+        long delta = TimeUnit.SECONDS.convert(ts, TimeUnit.MILLISECONDS) - windowStartInSec;
+        return (int) (delta / windowSizeInSec);
     }
 
     @Override
-    protected void switchCompactionLocation(DataDirectory directory) {
+    protected void switchCompactionLocation(DataDirectory directory)
+    {
 
+        // TODO: may have to consider the situation where directory is repeated.
         sstableDirectory = directory;
-        ssTableWriters = new SSTableWriter[windowCount];
+        ssTableWriters = new SSTableWriter[(int) windowCount];
     }
 
     @SuppressWarnings("resource")
-    private SSTableWriter getSSTableWriter() {
-
+    private SSTableWriter getSSTableWriter()
+    {
         return SSTableWriter.create(
-            Descriptor.fromFilename(cfs.getSSTablePath(getDirectories().getLocationForDisk(sstableDirectory))),
-            estimatedTotalKeys / windowCount,
-            minRepairedAt,
-            cfs.metadata,
-            new MetadataCollector(allSSTables, cfs.metadata.comparator, 0),
-            SerializationHeader.make(cfs.metadata, nonExpiredSSTables),
-            cfs.indexManager.listIndexes(),
-            txn);
+                Descriptor.fromFilename(cfs.getSSTablePath(getDirectories().getLocationForDisk(sstableDirectory))),
+                estimatedTotalKeys / windowCount,
+                minRepairedAt,
+                cfs.metadata,
+                new MetadataCollector(allSSTables, cfs.metadata.comparator, level),
+                SerializationHeader.make(cfs.metadata, nonExpiredSSTables),
+                cfs.indexManager.listIndexes(),
+                txn);
     }
 }

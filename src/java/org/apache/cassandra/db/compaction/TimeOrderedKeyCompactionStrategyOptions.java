@@ -26,15 +26,16 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-final class TimeOrderedKeyCompactionStrategyOptions {
+final class TimeOrderedKeyCompactionStrategyOptions
+{
     private static final Logger logger = LoggerFactory.getLogger(TimeOrderedKeyCompactionStrategyOptions.class);
 
     protected static final String TOMBSTONE_COMPACTION_DELAY_UNIT_KEY = "tombstone_compaction_delay_unit";
     protected static final String TOMBSTONE_COMPACTION_DELAY_KEY = "tombstone_compaction_delay";
 
     // format: "1230,40.0"
-    protected static final String WINDOW_COMPACTION_SIZE_THRESHOLD = "window_compaction_size_threshold";
-    protected static final String WINDOW_COMPACTION_GLOBAL_SIZE_THRESHOLD = "window_compaction_global_size_threshold";
+    protected static final String WINDOW_GARBAGE_SIZE_THRESHOLD_KEY = "window_garbage_size_threshold";
+    protected static final String GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY = "global_garbage_size_threshold";
 
     final TimeWindowCompactionStrategyOptions twcsOptions;
     final long tombstoneCompactionDelay;
@@ -46,7 +47,8 @@ final class TimeOrderedKeyCompactionStrategyOptions {
     final long windowCompactionGlobalSizeInMB;
     final double windowCompactionGlobalSizePercent;
 
-    TimeOrderedKeyCompactionStrategyOptions(Map<String, String> options) {
+    TimeOrderedKeyCompactionStrategyOptions(Map<String, String> options)
+    {
 
         this.twcsOptions = new TimeWindowCompactionStrategyOptions(options);
 
@@ -56,24 +58,29 @@ final class TimeOrderedKeyCompactionStrategyOptions {
         optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_KEY);
         tombstoneCompactionDelay = optionValue == null ? twcsOptions.sstableWindowSize : Integer.parseInt(optionValue);
 
-        Pair<Long, Double> thresholdOption = parseSizeThreshold(options.get(WINDOW_COMPACTION_SIZE_THRESHOLD));
+        Pair<Long, Double> thresholdOption = parseSizeThreshold(options.get(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY));
         windowCompactionSizeInMB = thresholdOption.left;
         windowCompactionSizePercent = thresholdOption.right;
 
-        thresholdOption = parseSizeThreshold(options.get(WINDOW_COMPACTION_GLOBAL_SIZE_THRESHOLD));
+        thresholdOption = parseSizeThreshold(options.get(GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY));
         windowCompactionGlobalSizeInMB = thresholdOption.left;
         windowCompactionGlobalSizePercent = thresholdOption.right;
     }
 
     public static Map<String, String> validateOptions(Map<String, String> options, Map<String, String> uncheckedOptions) throws ConfigurationException
     {
+        uncheckedOptions = TimeWindowCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
+
         String optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY);
         try
         {
             if (optionValue != null)
+            {
                 if (!TimeWindowCompactionStrategyOptions.validWindowTimeUnits.contains(TimeUnit.valueOf(optionValue)))
+                {
                     throw new ConfigurationException(String.format("%s is not valid for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_UNIT_KEY));
-
+                }
+            }
         }
         catch (IllegalArgumentException e)
         {
@@ -81,6 +88,7 @@ final class TimeOrderedKeyCompactionStrategyOptions {
         }
 
         optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_KEY);
+        optionValue = optionValue == null ? options.get(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY) : optionValue;
         try
         {
             int sstableWindowSize = optionValue == null ? TimeWindowCompactionStrategyOptions.DEFAULT_COMPACTION_WINDOW_SIZE : Integer.parseInt(optionValue);
@@ -94,52 +102,75 @@ final class TimeOrderedKeyCompactionStrategyOptions {
             throw new ConfigurationException(String.format("%s is not a parsable int (base10) for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_KEY), e);
         }
 
-        optionValue = options.get(WINDOW_COMPACTION_SIZE_THRESHOLD);
-        try
+        // window sizes have been validated. Check for divisiblity
+
+        long windowSizeInsec =
+                TimeUnit.SECONDS.convert(
+                        Long.parseLong(options.get(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY)),
+                        TimeUnit.valueOf(options.get(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY)));
+
+        long tombstoneDelayInsec =
+                TimeUnit.SECONDS.convert(
+                        Long.parseLong(options.get(TOMBSTONE_COMPACTION_DELAY_KEY)),
+                        TimeUnit.valueOf(options.get(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY)));
+
+        if (tombstoneDelayInsec < windowSizeInsec || tombstoneDelayInsec % windowSizeInsec != 0)
         {
-            Pair<Long, Double> threshold = parseSizeThreshold(optionValue);
-            if (threshold.left < 1 || threshold.right <= 0.0)
-            {
-                throw new ConfigurationException(String.format("(%d, %f) must be greater than (0,0) for %s", threshold.left, threshold.right, WINDOW_COMPACTION_SIZE_THRESHOLD));
-            }
-        }
-        catch (NumberFormatException e)
-        {
-            throw new ConfigurationException(String.format("%s is not a parsable for %s", optionValue, WINDOW_COMPACTION_SIZE_THRESHOLD), e);
+            throw new ConfigurationException(String.format(
+                    "%s should be more than and divisible by %s when converted to seconds", TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, TOMBSTONE_COMPACTION_DELAY_KEY));
         }
 
-        optionValue = options.get(WINDOW_COMPACTION_GLOBAL_SIZE_THRESHOLD);
+
+        optionValue = options.get(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY);
         try
         {
             Pair<Long, Double> threshold = parseSizeThreshold(optionValue);
             if (threshold.left < 1 || threshold.right <= 0.0)
             {
-                throw new ConfigurationException(String.format("(%d, %f) must be greater than (0,0) for %s", threshold.left, threshold.right, WINDOW_COMPACTION_GLOBAL_SIZE_THRESHOLD));
+                throw new ConfigurationException(String.format("(%d, %f) must be greater than (0,0) for %s", threshold.left, threshold.right, WINDOW_GARBAGE_SIZE_THRESHOLD_KEY));
             }
         }
         catch (NumberFormatException e)
         {
-            throw new ConfigurationException(String.format("%s is not a parsable for %s", optionValue, WINDOW_COMPACTION_GLOBAL_SIZE_THRESHOLD), e);
+            throw new ConfigurationException(String.format("%s is not a parsable for %s", optionValue, WINDOW_GARBAGE_SIZE_THRESHOLD_KEY), e);
+        }
+
+        optionValue = options.get(GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY);
+        try
+        {
+            Pair<Long, Double> threshold = parseSizeThreshold(optionValue);
+            if (threshold.left < 1 || threshold.right <= 0.0)
+            {
+                throw new ConfigurationException(String.format("(%d, %f) must be greater than (0,0) for %s", threshold.left, threshold.right, GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY));
+            }
+        }
+        catch (NumberFormatException e)
+        {
+            throw new ConfigurationException(String.format("%s is not a parsable for %s", optionValue, GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY), e);
         }
 
         uncheckedOptions.remove(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY);
         uncheckedOptions.remove(TOMBSTONE_COMPACTION_DELAY_KEY);
-        uncheckedOptions.remove(WINDOW_COMPACTION_SIZE_THRESHOLD);
-        uncheckedOptions.remove(WINDOW_COMPACTION_GLOBAL_SIZE_THRESHOLD);
+        uncheckedOptions.remove(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY);
+        uncheckedOptions.remove(GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY);
 
-        uncheckedOptions = TimeWindowCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
         return uncheckedOptions;
     }
 
-    private static Pair<Long, Double> parseSizeThreshold(String option) {
+    private static Pair<Long, Double> parseSizeThreshold(String option)
+    {
         String[] tokens = option.split(",");
-        if(tokens.length != 2) {
+        if (tokens.length != 2)
+        {
             throw new IllegalArgumentException();
         }
 
-        try {
+        try
+        {
             return Pair.create(Long.parseLong(tokens[0]), Double.parseDouble(tokens[1]));
-        } catch (Exception e) {
+        }
+        catch (Exception e)
+        {
             throw new IllegalArgumentException(e);
         }
     }
