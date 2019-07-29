@@ -90,6 +90,7 @@ public class PartitionUpdate extends AbstractBTreePartition
         this.holder = new Holder(columns, BTree.empty(), deletionInfo, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS, RowTypes.NONE);
         this.canHaveShadowedData = canHaveShadowedData;
         rowBuilder = builder(initialRowCapacity);
+        this.rowTypes = RowTypes.NONE;
     }
 
     private PartitionUpdate(CFMetaData metadata,
@@ -103,6 +104,7 @@ public class PartitionUpdate extends AbstractBTreePartition
         this.deletionInfo = deletionInfo;
         this.isBuilt = true;
         this.canHaveShadowedData = canHaveShadowedData;
+        this.rowTypes = RowTypes.NONE;
     }
 
     public PartitionUpdate(CFMetaData metadata,

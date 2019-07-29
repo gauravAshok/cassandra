@@ -150,12 +150,12 @@ public class Memtable implements Comparable<Memtable>
 
     // ONLY to be used for testing, to create a mock Memtable
     @VisibleForTesting
-    public Memtable(CFMetaData metadata)
+    public Memtable(ColumnFamilyStore cfs)
     {
-        this.initialComparator = metadata.comparator;
-        this.cfs = null;
-        this.allocator = null;
-        this.columnsCollector = new ColumnsCollector(metadata.partitionColumns());
+        this.initialComparator = cfs.metadata.comparator;
+        this.cfs = cfs;
+        this.allocator = MEMORY_POOL.newAllocator();
+        this.columnsCollector = new ColumnsCollector(cfs.metadata.partitionColumns());
     }
 
     public MemtableAllocator getAllocator()

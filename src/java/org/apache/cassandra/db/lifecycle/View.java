@@ -17,16 +17,17 @@
  */
 package org.apache.cassandra.db.lifecycle;
 
-import java.util.*;
-
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.base.Predicate;
-import com.google.common.collect.*;
-
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import org.apache.cassandra.config.SchemaConstants;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.Memtable;
+import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.utils.Interval;
@@ -34,16 +35,14 @@ import org.apache.cassandra.utils.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.*;
+
 import static com.google.common.base.Predicates.equalTo;
 import static com.google.common.base.Predicates.not;
 import static com.google.common.collect.ImmutableList.copyOf;
 import static com.google.common.collect.ImmutableList.of;
-import static com.google.common.collect.Iterables.all;
-import static com.google.common.collect.Iterables.concat;
-import static com.google.common.collect.Iterables.filter;
-import static org.apache.cassandra.db.lifecycle.Helpers.emptySet;
-import static org.apache.cassandra.db.lifecycle.Helpers.filterOut;
-import static org.apache.cassandra.db.lifecycle.Helpers.replace;
+import static com.google.common.collect.Iterables.*;
+import static org.apache.cassandra.db.lifecycle.Helpers.*;
 
 /**
  * An immutable structure holding the current memtable, the memtables pending
@@ -82,14 +81,15 @@ public class View
     final SSTableIntervalTree intervalTree;
     final SSTableTimeIntervalTree timeIntervalTree;
 
-    final boolean timeOrderedCK;
+    final boolean isDummy;
+    final TimeOrdered timeOrderedCkStatus;
 
-    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree)
+    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, boolean isDummy)
     {
-        this(liveMemtables, flushingMemtables, sstables, compacting, intervalTree, false, SSTableTimeIntervalTree.empty());
+        this(liveMemtables, flushingMemtables, sstables, compacting, intervalTree, SSTableTimeIntervalTree.empty(), isDummy ? TimeOrdered.NO : TimeOrdered.UNKNOWN, isDummy);
     }
 
-    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, boolean timeOrderedCK, SSTableTimeIntervalTree timeIntervalTree)
+    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, SSTableTimeIntervalTree timeIntervalTree, TimeOrdered timeOrderedCkStatus, boolean isDummy)
     {
         assert liveMemtables != null;
         assert flushingMemtables != null;
@@ -105,26 +105,38 @@ public class View
         this.compactingMap = compacting;
         this.compacting = compactingMap.keySet();
         this.intervalTree = intervalTree;
-        this.timeOrderedCK = timeOrderedCK || isTimeOrderedCK(findKSCF());
+        this.isDummy = isDummy;
 
-        if(this.timeOrderedCK)
+        if (timeOrderedCkStatus == TimeOrdered.UNKNOWN)
         {
-            if(timeIntervalTree.isEmpty())
+            Pair<String, String> kscf = findKSCF();
+            if (kscf != null)
             {
-                this.timeIntervalTree = SSTableTimeIntervalTree.build(this.sstablesMap.keySet());
+                // if kscf is non null, we should be able to get out the table properties.
+                boolean isTimeOrdered = isTimeOrderedCK(kscf);
+                this.timeOrderedCkStatus = isTimeOrdered ? TimeOrdered.YES : TimeOrdered.NO;
+                this.timeIntervalTree = isTimeOrdered ? SSTableTimeIntervalTree.build(this.sstablesMap.keySet()) : SSTableTimeIntervalTree.empty();
             }
             else
             {
-                this.timeIntervalTree = timeIntervalTree;
+                this.timeOrderedCkStatus = TimeOrdered.UNKNOWN;
+                this.timeIntervalTree = SSTableTimeIntervalTree.empty();
             }
         }
         else
         {
-            this.timeIntervalTree = SSTableTimeIntervalTree.empty();
+            this.timeOrderedCkStatus = timeOrderedCkStatus;
+            this.timeIntervalTree = timeIntervalTree;
         }
 
         // TODO: remove these extensive logging after thorough testing
         findAndLogKSCF("create");
+    }
+
+    enum TimeOrdered {
+        YES,
+        NO,
+        UNKNOWN
     }
 
     public Memtable getCurrentMemtable()
@@ -201,7 +213,8 @@ public class View
     @Override
     public String toString()
     {
-        return String.format("View(pending_count=%d, sstables=%s, compacting=%s, keyOrdered=%s)", liveMemtables.size() + flushingMemtables.size() - 1, sstables, compacting, String.valueOf(timeOrderedCK));
+        return String.format("View(pending_count=%d, sstables=%s, compacting=%s, keyOrdered=%s)", liveMemtables.size() + flushingMemtables.size() - 1, sstables,
+                compacting, timeOrderedCkStatus);
     }
 
     /**
@@ -260,10 +273,9 @@ public class View
         assert sstableSet == SSTableSet.LIVE;
         return (view) -> {
             view.findAndLogKSCF("select");
-            if(view.timeOrderedCK)
+            if(view.timeOrderedCkStatus == TimeOrdered.YES)
             {
                 return selectBasedOnTime(view, sstableSet, key);
-
             }
             else
             {
@@ -305,7 +317,7 @@ public class View
             view.findAndLogKSCF("update compacting");
             assert all(mark, Helpers.idIn(view.sstablesMap));
             return new View(view.liveMemtables, view.flushingMemtables, view.sstablesMap,
-                            replace(view.compactingMap, unmark, mark), view.intervalTree, view.timeOrderedCK, view.timeIntervalTree);
+                            replace(view.compactingMap, unmark, mark), view.intervalTree, view.timeIntervalTree, view.timeOrderedCkStatus, view.isDummy);
         };
     }
 
@@ -331,9 +343,9 @@ public class View
             view.findAndLogKSCF("update liveSet");
             Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, remove, add);
 
-            // timeIntervalTree will be changed. let constructor do the building
-            return new View(view.liveMemtables, view.flushingMemtables, sstableMap, view.compactingMap,
-                            SSTableIntervalTree.build(sstableMap.keySet()), view.timeOrderedCK, SSTableTimeIntervalTree.empty());
+            return new View(view.liveMemtables, view.flushingMemtables, sstableMap, view.compactingMap, SSTableIntervalTree.build(sstableMap.keySet()),
+                    view.timeOrderedCkStatus == TimeOrdered.YES ? SSTableTimeIntervalTree.build(sstableMap.keySet()) : SSTableTimeIntervalTree.empty(),
+                    view.timeOrderedCkStatus, view.isDummy);
         };
     }
 
@@ -344,7 +356,7 @@ public class View
             view.findAndLogKSCF("switch memtable");
             List<Memtable> newLive = ImmutableList.<Memtable>builder().addAll(view.liveMemtables).add(newMemtable).build();
             assert newLive.size() == view.liveMemtables.size() + 1;
-            return new View(newLive, view.flushingMemtables, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeOrderedCK, view.timeIntervalTree);
+            return new View(newLive, view.flushingMemtables, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedCkStatus, view.isDummy);
         };
     }
 
@@ -360,7 +372,7 @@ public class View
                                                        filter(flushing, not(lessThan(toFlush)))));
             assert newLive.size() == live.size() - 1;
             assert newFlushing.size() == flushing.size() + 1;
-            return new View(newLive, newFlushing, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeOrderedCK, view.timeIntervalTree);
+            return new View(newLive, newFlushing, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedCkStatus, view.isDummy);
         };
     }
 
@@ -374,13 +386,12 @@ public class View
 
             if (flushed == null || Iterables.isEmpty(flushed))
                 return new View(view.liveMemtables, flushingMemtables, view.sstablesMap,
-                                view.compactingMap, view.intervalTree);
+                                view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedCkStatus, view.isDummy);
 
             Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, emptySet(), flushed);
 
-            // timeIntervalTree will be changed. let constructor do the building
-            return new View(view.liveMemtables, flushingMemtables, sstableMap, view.compactingMap,
-                            SSTableIntervalTree.build(sstableMap.keySet()), view.timeOrderedCK, SSTableTimeIntervalTree.empty());
+            return new View(view.liveMemtables, flushingMemtables, sstableMap, view.compactingMap, SSTableIntervalTree.build(sstableMap.keySet()),
+                    view.timeOrderedCkStatus == TimeOrdered.YES ? SSTableTimeIntervalTree.build(sstableMap.keySet()) : null, view.timeOrderedCkStatus, view.isDummy);
         };
     }
 
@@ -408,9 +419,9 @@ public class View
 
     private void logKSCF(String tag, Pair<String, String> kscf) {
         if(kscf == null) {
-            logger.info("ks: {}, cf: {}, tag: {}, view: {}", null, null, tag, this);
+//            logger.info("ks: {}, cf: {}, tag: {}, view: {}", null, null, tag, this);
         } else {
-            logger.info("ks: {}, cf: {}, tag: {}, view: {}", kscf.left, kscf.right, tag, this);
+//            logger.info("ks: {}, cf: {}, tag: {}, view: {}", kscf.left, kscf.right, tag, this);
         }
     }
 

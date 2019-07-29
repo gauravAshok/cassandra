@@ -64,7 +64,7 @@ public class MockSchema
 
     public static Memtable memtable(ColumnFamilyStore cfs)
     {
-        return new Memtable(cfs.metadata);
+        return new Memtable(cfs);
     }
 
     public static SSTableReader sstable(int generation, ColumnFamilyStore cfs)

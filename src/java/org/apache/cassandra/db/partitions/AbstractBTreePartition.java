@@ -32,49 +32,7 @@ import static org.apache.cassandra.utils.btree.BTree.Dir.desc;
 
 public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
 {
-    public enum RowTypes
-    {
-        NONE(0),
-        TOMBSTONE(1),
-        DATA(2),
-        ANY(3);
-
-        private static final RowTypes[] variants = {NONE, TOMBSTONE, DATA, ANY};
-        private int flag;
-
-        RowTypes(int flag)
-        {
-            this.flag = flag;
-        }
-
-        public RowTypes or(RowTypes type)
-        {
-            return variants[this.flag | type.flag];
-        }
-
-        public RowTypes or(Row row) {
-            return or(getType(row));
-        }
-
-        public static RowTypes getType(Row row)
-        {
-            if (row == null)
-            {
-                return NONE;
-            }
-
-            if (row.deletion().isLive())
-            {
-                return DATA;
-            }
-            else
-            {
-                return TOMBSTONE;
-            }
-        }
-    }
-
-    protected static final Holder EMPTY = new Holder(PartitionColumns.NONE, BTree.empty(), DeletionInfo.LIVE, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS, RowTypes.ANY);
+    protected static final Holder EMPTY = new Holder(PartitionColumns.NONE, BTree.empty(), DeletionInfo.LIVE, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS, RowTypes.NONE);
 
     protected final CFMetaData metadata;
     protected final DecoratedKey partitionKey;
@@ -90,7 +48,6 @@ public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
 
     protected static final class Holder
     {
-
         final PartitionColumns columns;
         final DeletionInfo deletionInfo;
         // the btree of rows
@@ -333,6 +290,7 @@ public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
             if (unfiltered.kind() == Unfiltered.Kind.ROW)
             {
                 Row row = (Row) unfiltered;
+                builder.add(row);
                 type = type.or(row);
             }
             else
@@ -417,5 +375,47 @@ public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
             return null;
 
         return BTree.findByIndex(tree, BTree.size(tree) - 1);
+    }
+
+    public enum RowTypes
+    {
+        NONE(0),
+        TOMBSTONE(1),
+        DATA(2),
+        ANY(3);
+
+        private static final RowTypes[] variants = {NONE, TOMBSTONE, DATA, ANY};
+        private int flag;
+
+        RowTypes(int flag)
+        {
+            this.flag = flag;
+        }
+
+        public RowTypes or(RowTypes type)
+        {
+            return variants[this.flag | type.flag];
+        }
+
+        public RowTypes or(Row row) {
+            return or(getType(row));
+        }
+
+        public static RowTypes getType(Row row)
+        {
+            if (row == null)
+            {
+                return NONE;
+            }
+
+            if (row.deletion().isLive())
+            {
+                return DATA;
+            }
+            else
+            {
+                return TOMBSTONE;
+            }
+        }
     }
 }

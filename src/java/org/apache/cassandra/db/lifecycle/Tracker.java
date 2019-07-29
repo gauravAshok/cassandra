@@ -203,13 +203,26 @@ public class Tracker
     @VisibleForTesting
     public void reset(Memtable memtable)
     {
-        view.set(new View(memtable != null ? singletonList(memtable) : Collections.emptyList(),
-                          Collections.emptyList(),
-                          Collections.emptyMap(),
-                          Collections.emptyMap(),
-                          SSTableIntervalTree.empty(),
-                          cfstore != null && (cfstore.clusteringKeyOrderedByTime()),
-                          SSTableTimeIntervalTree.empty()));
+        if(cfstore != null)
+        {
+            view.set(new View(memtable != null ? singletonList(memtable) : Collections.emptyList(),
+                    Collections.emptyList(),
+                    Collections.emptyMap(),
+                    Collections.emptyMap(),
+                    SSTableIntervalTree.empty(),
+                    SSTableTimeIntervalTree.empty(),
+                    cfstore.clusteringKeyOrderedByTime() ? View.TimeOrdered.YES : View.TimeOrdered.NO,
+                    isDummy()));
+        }
+        else
+        {
+            view.set(new View(memtable != null ? singletonList(memtable) : Collections.emptyList(),
+                    Collections.emptyList(),
+                    Collections.emptyMap(),
+                    Collections.emptyMap(),
+                    SSTableIntervalTree.empty(),
+                    isDummy()));
+        }
     }
 
     public Throwable dropSSTablesIfInvalid(Throwable accumulate)
