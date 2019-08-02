@@ -33,7 +33,10 @@ final class TimeOrderedKeyCompactionStrategyOptions
     protected static final String TOMBSTONE_COMPACTION_DELAY_UNIT_KEY = "tombstone_compaction_delay_unit";
     protected static final String TOMBSTONE_COMPACTION_DELAY_KEY = "tombstone_compaction_delay";
 
-    // format: "1230,40.0"
+    // format: "1230,40.0" : 1230MB or 40%
+    // default: "int_max:20" : 20% of the keys are tombstoned
+    protected static final String DEFAULT_GARBAGE_SIZE_THRESHOLD_STR = Integer.MAX_VALUE + ",20";
+    protected static final Pair<Long, Double> DEFAULT_GARBAGE_SIZE_THRESHOLD = parseSizeThreshold(DEFAULT_GARBAGE_SIZE_THRESHOLD_STR);
     protected static final String WINDOW_GARBAGE_SIZE_THRESHOLD_KEY = "window_garbage_size_threshold";
     protected static final String GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY = "global_garbage_size_threshold";
 
@@ -71,7 +74,25 @@ final class TimeOrderedKeyCompactionStrategyOptions
     {
         uncheckedOptions = TimeWindowCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
 
-        String optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY);
+        TimeWindowCompactionStrategyOptions timeWindowOptions = new TimeWindowCompactionStrategyOptions(options);
+
+        long compactionWindowSize, tombstoneDelay;
+
+        String optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_KEY);
+        try
+        {
+            tombstoneDelay = optionValue == null ? timeWindowOptions.sstableWindowSize : Integer.parseInt(optionValue);
+            if (tombstoneDelay < 1)
+            {
+                throw new ConfigurationException(String.format("%d must be greater than equal to 1 for %s", tombstoneDelay, TOMBSTONE_COMPACTION_DELAY_KEY));
+            }
+        }
+        catch (NumberFormatException e)
+        {
+            throw new ConfigurationException(String.format("%s is not a parsable int (base10) for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_KEY), e);
+        }
+
+        optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY);
         try
         {
             if (optionValue != null)
@@ -81,40 +102,21 @@ final class TimeOrderedKeyCompactionStrategyOptions
                     throw new ConfigurationException(String.format("%s is not valid for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_UNIT_KEY));
                 }
             }
+
+            TimeUnit delayUnit = optionValue == null ? timeWindowOptions.sstableWindowUnit : TimeUnit.valueOf(optionValue);
+            // convert to seconds
+            tombstoneDelay = TimeUnit.SECONDS.convert(tombstoneDelay, delayUnit);
         }
         catch (IllegalArgumentException e)
         {
             throw new ConfigurationException(String.format("%s is not valid for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_UNIT_KEY), e);
         }
 
-        optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_KEY);
-        optionValue = optionValue == null ? options.get(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY) : optionValue;
-        try
-        {
-            int sstableWindowSize = optionValue == null ? TimeWindowCompactionStrategyOptions.DEFAULT_COMPACTION_WINDOW_SIZE : Integer.parseInt(optionValue);
-            if (sstableWindowSize < 1)
-            {
-                throw new ConfigurationException(String.format("%d must be greater than equal to 1 for %s", sstableWindowSize, TOMBSTONE_COMPACTION_DELAY_KEY));
-            }
-        }
-        catch (NumberFormatException e)
-        {
-            throw new ConfigurationException(String.format("%s is not a parsable int (base10) for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_KEY), e);
-        }
-
         // window sizes have been validated. Check for divisiblity
 
-        long windowSizeInsec =
-                TimeUnit.SECONDS.convert(
-                        Long.parseLong(options.get(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY)),
-                        TimeUnit.valueOf(options.get(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY)));
+        compactionWindowSize = TimeUnit.SECONDS.convert(timeWindowOptions.sstableWindowSize, timeWindowOptions.sstableWindowUnit);
 
-        long tombstoneDelayInsec =
-                TimeUnit.SECONDS.convert(
-                        Long.parseLong(options.get(TOMBSTONE_COMPACTION_DELAY_KEY)),
-                        TimeUnit.valueOf(options.get(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY)));
-
-        if (tombstoneDelayInsec < windowSizeInsec || tombstoneDelayInsec % windowSizeInsec != 0)
+        if (tombstoneDelay < compactionWindowSize || tombstoneDelay % compactionWindowSize != 0)
         {
             throw new ConfigurationException(String.format(
                     "%s should be more than and divisible by %s when converted to seconds", TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, TOMBSTONE_COMPACTION_DELAY_KEY));
@@ -159,6 +161,10 @@ final class TimeOrderedKeyCompactionStrategyOptions
 
     private static Pair<Long, Double> parseSizeThreshold(String option)
     {
+        if(option == null || option.isEmpty()) {
+            return DEFAULT_GARBAGE_SIZE_THRESHOLD;
+        }
+
         String[] tokens = option.split(",");
         if (tokens.length != 2)
         {

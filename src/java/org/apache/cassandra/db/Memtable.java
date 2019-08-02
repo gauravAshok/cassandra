@@ -569,7 +569,7 @@ public class Memtable implements Comparable<Memtable>
         TombstoneMaskUnfilteredRowIterator(AtomicBTreePartition partition, boolean maskTombstones) {
             this.baseIterator = partition.unfilteredIterator();
             this.rowTypes = partition.rowTypes();
-            this.maskTombstones = !maskTombstones;
+            this.maskTombstones = maskTombstones;
         }
 
         TombstoneMaskUnfilteredRowIterator(AtomicBTreePartition partition)

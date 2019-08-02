@@ -25,6 +25,8 @@ import java.io.IOError;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
@@ -708,4 +710,13 @@ public class Util
         return new PagingState(pk, mark, 10, 0);
     }
 
+    public static Date dt(long offset) {
+        return Date.from(Instant.EPOCH.plus(offset, ChronoUnit.SECONDS));
+    }
+
+    public static void waitUptoNearestSeconds(int window) {
+        int waitTime = window - (FBUtilities.nowInSeconds() % window);
+        logger.info("waiting for {} seconds", waitTime);
+        FBUtilities.sleepQuietly(waitTime * 1000);
+    }
 }

@@ -185,9 +185,9 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         if (maxGarbageWindow.isPresent())
         {
             WindowedSStablesStats stats = maxGarbageWindow.get().getValue();
-            long threshold = Long.min((long) (stats.dataSizeOnDisk * options.windowCompactionSizePercent), options.windowCompactionSizeInMB * 1024 * 1024);
+            long threshold = Long.min((long) (stats.dataSizeOnDisk * (options.windowCompactionSizePercent / 100.0)), options.windowCompactionSizeInMB * 1024 * 1024);
 
-            long globalThreshold = Long.min((long) (ssTablesStats.totalDataSizeOnDisk * options.windowCompactionGlobalSizePercent), options.windowCompactionGlobalSizeInMB * 1024 * 1024);
+            long globalThreshold = Long.min((long) (ssTablesStats.totalDataSizeOnDisk * (options.windowCompactionGlobalSizePercent / 100.0)), options.windowCompactionGlobalSizeInMB * 1024 * 1024);
 
             // if we are breaching the per window or global garbage threshold, compact it.
             if (stats.estimatedGarbage >= threshold || ssTablesStats.totalEstimatedGarbage >= globalThreshold)
@@ -214,13 +214,11 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
     protected SSTablesStats buildPerWindowSStablesStats(List<SSTableReader> fullyExpired, long windowSizeInSec)
     {
         SSTablesStats stats = new SSTablesStats();
-        List<ComparablePair<Long, Long>> windows = fullyExpired.stream().map(s -> getWindow(s, windowSizeInSec)).collect(Collectors.toList());
 
         Set<Long> windowsWithWideSStables = new HashSet<>();
-        for (int i = 0; i < fullyExpired.size(); ++i)
+        for (SSTableReader expired: fullyExpired)
         {
-            SSTableReader expired = fullyExpired.get(i);
-            ComparablePair<Long, Long> window = windows.get(i);
+            ComparablePair<Long, Long> window = getWindow(expired, windowSizeInSec);
 
             // window size is 1, add it to stats
             if (window.right == 1 && !windowsWithWideSStables.contains(window.left))
@@ -229,13 +227,14 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                 if (perWindowStats == null)
                 {
                     perWindowStats = new WindowedSStablesStats();
+                    stats.windowedStats.put(window.left, perWindowStats);
                 }
 
                 perWindowStats.tombstoneSStables.add(expired);
-                perWindowStats.tombstoneCount += expired.getTotalRows();
             }
             else
             {
+                //TODO: will we ever find wide sstables. We are prioritizing splitting wide sstable. so think again.
                 for (int j = 0; j < window.right; ++j)
                 {
                     Long wideSStablesWindow = window.left + (j * windowSizeInSec);
@@ -245,24 +244,19 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
             }
         }
 
-        // at this poing we have all the windows where tombstones files are there.
-        // now get the data size metrics
+        // at this point we have all the windows where tombstones files are there.
+        // now get the appropriate metrics
 
         stats.windowedStats.forEach((key, value) -> {
+
+            value.tombstoneCount = SSTableReader.getApproximateKeyCount(value.tombstoneSStables);
+
             List<SSTableReader> overlappedSStables = getOverlappingLiveSSTables(value.tombstoneSStables)
                     .stream().filter(s -> s.getSSTableLevel() == Memtable.DATA_SSTABLE_LVL).collect(Collectors.toList());
 
-            long totalDataSize = 0;
-            long totalRowCount = 0;
-            for (SSTableReader sstable : overlappedSStables)
-            {
-                totalDataSize += sstable.onDiskLength();
-                totalRowCount += sstable.getTotalRows();
-            }
-
             value.dataSStables = overlappedSStables;
-            value.dataRowCount = totalRowCount;
-            value.dataSizeOnDisk = totalDataSize;
+            value.dataRowCount = SSTableReader.getApproximateKeyCount(overlappedSStables);
+            value.dataSizeOnDisk = overlappedSStables.stream().mapToLong(s -> s.onDiskLength()).sum();
             value.estimatedGarbage = (long) (((double) value.tombstoneCount / (double) value.dataRowCount) * value.dataSizeOnDisk);
         });
 
@@ -272,28 +266,24 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
     protected void populateGlobalStats(SSTablesStats stats)
     {
         long totalDataSize = 0;
-        long totalRowCount = 0;
-        long tombstoneCount = 0;
 
         List<SSTableReader> allSStables = new ArrayList<>(cfs.getTracker().getView().liveSSTables());
+
+        Iterable<SSTableReader> tombstones = Iterables.filter(allSStables, s -> s.getSSTableLevel() == Memtable.TOMBSTONE_SSTABLE_LVL);
+        Iterable<SSTableReader> data = Iterables.filter(allSStables, s -> s.getSSTableLevel() == Memtable.DATA_SSTABLE_LVL);
 
         for (SSTableReader sstable : allSStables)
         {
             if (sstable.getSSTableLevel() == Memtable.DATA_SSTABLE_LVL)
             {
                 totalDataSize += sstable.onDiskLength();
-                totalRowCount += sstable.getTotalRows();
-            }
-            else if (sstable.getSSTableLevel() == Memtable.TOMBSTONE_SSTABLE_LVL)
-            {
-                tombstoneCount += sstable.getTotalRows();
             }
         }
 
-        stats.totalDataRowCount = totalRowCount;
+        stats.totalDataRowCount = SSTableReader.getApproximateKeyCount(data);
         stats.totalDataSizeOnDisk = totalDataSize;
-        stats.totalTombstoneCount = tombstoneCount;
-        stats.totalEstimatedGarbage = (long) (((double) tombstoneCount / (double) totalRowCount) * totalDataSize);
+        stats.totalTombstoneCount = SSTableReader.getApproximateKeyCount(tombstones);
+        stats.totalEstimatedGarbage = (long) (((double) stats.totalTombstoneCount / (double) stats.totalDataRowCount) * stats.totalDataSizeOnDisk);
     }
 
     protected List<SSTableReader> getFullyExpiredSStables(final Iterable<SSTableReader> uncompacting, final int gcBefore)
