@@ -66,7 +66,6 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
     private final Set<SSTableReader> sstables = new HashSet<>();
 
     private volatile int estimatedRemainingTasks;
-    private long highestWindowSeen;
 
     public TimeOrderedKeyCompactionStrategy(ColumnFamilyStore cfs, Map<String, String> options)
     {
@@ -151,7 +150,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
             return SSTablesForCompaction.EMPTY;
         }
 
-        Set<SSTableReader> uncompacting = ImmutableSet.copyOf(filter(cfs.getUncompactingSSTables(), sstables::contains));
+        Set<SSTableReader> uncompacting = ImmutableSet.copyOf(filterSuspectSSTables(filter(cfs.getUncompactingSSTables(), sstables::contains)));
         long windowSizeInSec = windowSizeInSec();
         long newTombstoneCompactionDelayInSec = tombstoneComactionDelayInSec();
 
@@ -414,7 +413,13 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
     @SuppressWarnings("resource") // transaction is closed by AbstractCompactionTask::execute
     public synchronized Collection<AbstractCompactionTask> getMaximalTask(int gcBefore, boolean splitOutput)
     {
-        return null;
+        Iterable<SSTableReader> filteredSSTables = filterSuspectSSTables(sstables);
+        if (Iterables.isEmpty(filteredSSTables))
+            return null;
+        LifecycleTransaction txn = cfs.getTracker().tryModify(filteredSSTables, OperationType.COMPACTION);
+        if (txn == null)
+            return null;
+        return Collections.singleton(new TimeOrderedKeyCompactionTask(cfs, txn, gcBefore, twcsOptions, true, false));
     }
 
     @Override

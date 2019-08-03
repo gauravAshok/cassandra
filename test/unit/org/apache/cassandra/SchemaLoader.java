@@ -744,7 +744,7 @@ public class SchemaLoader
                 builder = builder.addClusteringColumn("name", clusteringType);
 
             for (int i = 0; i < columnCount; i++)
-                builder.addRegularColumn("val" + i, AsciiType.instance);
+                builder.addRegularColumn("val" + i, valType);
 
             return builder.build()
                     .compression(getCompressionParameters())

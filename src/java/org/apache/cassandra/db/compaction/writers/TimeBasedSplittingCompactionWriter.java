@@ -27,7 +27,6 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 
-import java.nio.ByteBuffer;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -40,6 +39,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     private final Set<SSTableReader> allSSTables;
     private SSTableWriter[] ssTableWriters;
     private Directories.DataDirectory sstableDirectory;
+    private final boolean multiKeyPartition;
 
     public TimeBasedSplittingCompactionWriter(
             ColumnFamilyStore cfs,
@@ -47,6 +47,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
             LifecycleTransaction txn,
             Set<SSTableReader> nonExpiredSSTables,
             boolean keepOriginals,
+            boolean multiKeyPartition,
             long windowSizeInSec,
             long windowStartInMin,
             long windowCount,
@@ -54,6 +55,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     {
 
         super(cfs, directories, txn, nonExpiredSSTables, keepOriginals);
+        this.multiKeyPartition = multiKeyPartition;
         this.windowSizeInSec = windowSizeInSec;
         this.windowStartInSec = windowStartInMin;
         this.windowCount = windowCount;
@@ -84,7 +86,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
 
     private int getWindowIndex(DecoratedKey pk)
     {
-        long ts = pk.getFirstKeyAsLong();
+        long ts = multiKeyPartition ? pk.getFirstKeyAsLong() : pk.getKeyAsLong();
         long delta = TimeUnit.SECONDS.convert(ts, TimeUnit.MILLISECONDS) - windowStartInSec;
         return (int) (delta / windowSizeInSec);
     }

@@ -32,26 +32,25 @@ import java.util.concurrent.TimeUnit;
 
 public class TimeOrderedKeyCompactionTask extends CompactionTask
 {
-    private final TimeWindowCompactionStrategyOptions twcsOptions;
     private final long windowSizeInSec;
     private final boolean splitExpected;
     private final boolean tombstoneOnlyMerge;
+    private final boolean multiKeyPartition;
 
-    public TimeOrderedKeyCompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, int gcBefore, TimeWindowCompactionStrategyOptions twcsOptions, boolean splitExpected, boolean tombstoneOnlyMerge)
+    public TimeOrderedKeyCompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, int gcBefore, TimeWindowCompactionStrategyOptions twcsOptions,
+                                        boolean splitExpected, boolean tombstoneOnlyMerge)
     {
-
         super(cfs, txn, gcBefore);
-        this.twcsOptions = twcsOptions;
         this.windowSizeInSec = TimeUnit.SECONDS.convert(twcsOptions.sstableWindowSize, twcsOptions.sstableWindowUnit);
         this.splitExpected = splitExpected;
         this.tombstoneOnlyMerge = tombstoneOnlyMerge;
+        this.multiKeyPartition = cfs.metadata.partitionKeyColumns().size() > 1;
     }
 
     @Override
     public CompactionAwareWriter getCompactionAwareWriter(
             ColumnFamilyStore cfs, Directories directories, LifecycleTransaction txn, Set<SSTableReader> nonExpiredSSTables)
     {
-
         long windowStart = Long.MAX_VALUE;
         long windowEnd = 0;
 
@@ -67,7 +66,7 @@ public class TimeOrderedKeyCompactionTask extends CompactionTask
             }
 
             return new TimeBasedSplittingCompactionWriter(
-                    cfs, directories, txn, nonExpiredSSTables, false, windowSizeInSec, windowStart, (windowEnd - windowStart) / windowSizeInSec, getLevel());
+                    cfs, directories, txn, nonExpiredSSTables, false, multiKeyPartition, windowSizeInSec, windowStart, (windowEnd - windowStart) / windowSizeInSec, getLevel());
         }
 
         // if split is not expected, we are just looking at normal compaction between sstables

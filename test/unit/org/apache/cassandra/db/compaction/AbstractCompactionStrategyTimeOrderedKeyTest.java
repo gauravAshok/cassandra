@@ -26,16 +26,13 @@ import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.schema.CompactionParams;
 import org.apache.cassandra.schema.KeyspaceParams;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.nio.ByteBuffer;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.function.IntConsumer;
+import java.util.stream.IntStream;
 
 public class AbstractCompactionStrategyTimeOrderedKeyTest
 {
@@ -49,7 +46,7 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.TimeOrderedKeyCFMD.standardCFMD(KEYSPACE1, TOKCS_TABLE)
-                                                .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, getDefaultTOKCSOptions())));
+                                                .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getDefaultTOKCSOptions())));
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(TOKCS_TABLE).disableAutoCompaction();
     }
 
@@ -79,23 +76,20 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
         Util.waitUptoNearestSeconds(10);
 
         // Add 4 sstables
-        for (int i = 1; i <= 4; i++)
-        {
-            insertKeyAndFlush(table, Util.dt(i));
-        }
+        IntStream.range(1, 5).forEach(i -> {
+            TOKCSUtil.insertStandard1(cfs, i);
+            cfs.forceBlockingFlush();
+        });
+
+        IntConsumer deleter = tombstoneRange
+                ? i -> TOKCSUtil.deleteRangeStandard1(cfs, i)
+                : i -> TOKCSUtil.deleteStandard1(cfs, i);
 
         // and then delete everything
-        for (int i = 1; i <= 4; i++)
-        {
-            if(tombstoneRange)
-            {
-                deleteKeyByWithTombstoneRangeAndFlush(table, Util.dt(i));
-            }
-            else
-            {
-                deleteKeyAndFlush(table, Util.dt(i));
-            }
-        }
+        IntStream.range(1, 5).forEach(i -> {
+            deleter.accept(i);
+            cfs.forceBlockingFlush();
+        });
 
         Util.waitUptoNearestSeconds(60); // wait for a minute, because TOKCS only considers window that has been completed
 
@@ -110,56 +104,5 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
 
         // verify the compaction strategy will return null
         Assert.assertNull(strategy.getNextBackgroundTask(FBUtilities.nowInSeconds()));
-    }
-
-    private static void insertKeyAndFlush(String table, Date key)
-    {
-        long timestamp = System.currentTimeMillis();
-        DecoratedKey dk = Util.dk(ByteBufferUtil.bytes(key.getTime()));
-        ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(table);
-        new RowUpdateBuilder(cfs.metadata, timestamp, dk.getKey())
-        .clustering(key, String.valueOf(key))
-        .add("val", "val_" + key)
-        .add("val0", "val0_" + key)
-        .build()
-        .applyUnsafe();
-        cfs.forceBlockingFlush();
-    }
-
-    private static void deleteKeyByWithTombstoneRangeAndFlush(String table, Date key)
-    {
-        long timestamp = System.currentTimeMillis();
-        int timeInSec = FBUtilities.nowInSeconds();
-        DecoratedKey dk = Util.dk(ByteBufferUtil.bytes(key.getTime()));
-        ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(table);
-
-        RowUpdateBuilder deletedRowUpdateBuilder = new RowUpdateBuilder(cfs.metadata, timestamp, dk.getKey());
-
-        ByteBuffer[] buffers = {ByteBufferUtil.bytes(key.getTime()), ByteBufferUtil.bytes(String.valueOf(key))};
-
-        Clustering startClustering = Clustering.make(buffers);
-        Clustering endClustering = Clustering.make(buffers);
-        deletedRowUpdateBuilder.addRangeTombstone(new RangeTombstone(Slice.make(startClustering, endClustering), new DeletionTime(timestamp, timeInSec)));
-        deletedRowUpdateBuilder.build().applyUnsafe();
-
-        cfs.forceBlockingFlush();
-    }
-
-    private static void deleteKeyAndFlush(String table, Date key)
-    {
-        long timestamp = System.currentTimeMillis();
-        ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(table);
-        RowUpdateBuilder.deleteRow(cfs.metadata, timestamp, key, key, String.valueOf(key)).applyUnsafe();
-
-        cfs.forceBlockingFlush();
-    }
-
-    protected static Map<String, String> getDefaultTOKCSOptions() {
-        Map<String, String> options = new HashMap<>();
-        options.put(TimeOrderedKeyCompactionStrategyOptions.WINDOW_GARBAGE_SIZE_THRESHOLD_KEY, "128,50");
-        options.put(TimeOrderedKeyCompactionStrategyOptions.GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY, "1024,50");
-        options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, "1");
-        options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY, "MINUTES");
-        return options;
     }
 }

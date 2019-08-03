@@ -56,7 +56,6 @@ import static org.apache.cassandra.db.lifecycle.Helpers.*;
  */
 public class View
 {
-
     private static final Logger logger = LoggerFactory.getLogger(View.class);
     /**
      * ordinarily a list of size 1, but when preparing to flush will contain both the memtable we will flush
@@ -287,9 +286,7 @@ public class View
     private static Iterable<SSTableReader> selectBasedOnTime(View view, SSTableSet sstableSet, DecoratedKey key)
     {
         assert sstableSet == SSTableSet.LIVE;
-        long ts = key.getFirstKeyAsLong();
-        assert ts >= 0;
-        return view.timeIntervalTree.search(ts);
+        return view.timeIntervalTree.searchByDecoratedKey(key);
     }
 
     /**
