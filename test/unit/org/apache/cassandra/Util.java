@@ -715,8 +715,13 @@ public class Util
     }
 
     public static void waitUptoNearestSeconds(int window) {
-        int waitTime = window - (FBUtilities.nowInSeconds() % window);
+        int waitTime = timeUptoNearestSeconds(window);
         logger.info("waiting for {} seconds", waitTime);
         FBUtilities.sleepQuietly(waitTime * 1000);
+    }
+
+    public static int timeUptoNearestSeconds(int window) {
+        int waitTime = window - (FBUtilities.nowInSeconds() % window);
+        return waitTime;
     }
 }

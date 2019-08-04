@@ -75,4 +75,16 @@ public class TOKCSUtil
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY, "MINUTES");
         return options;
     }
+
+    public static String getCQLFramgentForTOKCS(String threshold, int gcGraceSec) {
+        return String.format("WITH compaction = {" +
+                "'class':'org.apache.cassandra.db.compaction.TimeOrderedKeyCompactionStrategy', " +
+                "'compaction_window_unit':'MINUTES', " +
+                "'compaction_window_size':'1', " +
+                "'window_garbage_size_threshold':'%s', " +
+                "'global_garbage_size_threshold':'%s'" +
+                "} " +
+                "AND time_ordered_ck = true " +
+                "AND gc_grace_seconds = %d", threshold, threshold, gcGraceSec);
+    }
 }

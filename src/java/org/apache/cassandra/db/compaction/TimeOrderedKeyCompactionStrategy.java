@@ -90,7 +90,6 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
     @SuppressWarnings("resource") // transaction is closed by AbstractCompactionTask::execute
     public AbstractCompactionTask getNextBackgroundTask(int gcBefore)
     {
-
         SSTablesForCompaction previousCandidate = null;
         while (true)
         {
@@ -116,6 +115,10 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
             LifecycleTransaction modifier = cfs.getTracker().tryModify(sstables.sstables, OperationType.COMPACTION);
             if (modifier != null)
             {
+                if(logger.isDebugEnabled())
+                {
+                    logger.debug("compaction task: {}", sstables);
+                }
                 return buildCompactionTask(sstables, modifier, gcBefore);
             }
             previousCandidate = sstables;
@@ -144,7 +147,6 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
      */
     private synchronized SSTablesForCompaction getNextBackgroundSSTables(final int gcBefore)
     {
-
         if (Iterables.isEmpty(cfs.getSSTables(SSTableSet.LIVE)))
         {
             return SSTablesForCompaction.EMPTY;
@@ -158,13 +160,13 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         long now = FBUtilities.nowInSeconds();
         long nowWindowForNewTombstoneCompaction = toWindow(now, newTombstoneCompactionDelayInSec);
 
-
-        List<SSTableReader> tombstoneSStables = uncompacting.stream().filter(s -> s.getSSTableLevel() == Memtable.TOMBSTONE_SSTABLE_LVL).collect(Collectors.toList());
+        List<SSTableReader> tombstoneSStables = uncompacting.stream()
+                .filter(s -> s.getSSTableLevel() == Memtable.TOMBSTONE_SSTABLE_LVL)
+                .filter(s -> (s.maxDataAge / 1000) < nowWindowForNewTombstoneCompaction)
+                .collect(Collectors.toList());
 
         List<SSTableReader> wideTombstoneSStables = tombstoneSStables.stream().
-                filter(s ->
-                        (s.maxDataAge / 1000) < nowWindowForNewTombstoneCompaction &&
-                                getWindow(s, windowSizeInSec).right > 1)
+                filter(s -> getWindow(s, windowSizeInSec).right > 1)
                 .collect(Collectors.toList());
 
         if (!wideTombstoneSStables.isEmpty())
@@ -527,6 +529,16 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         public int hashCode()
         {
             return Objects.hash(sstables);
+        }
+
+        @Override
+        public String toString()
+        {
+            return "SSTablesForCompaction{" +
+                    "\nsstables=" + sstables +
+                    ",\n tombstoneMerge=" + tombstoneMerge +
+                    ",\n splitSStable=" + splitSStable +
+                    "\n}";
         }
     }
 

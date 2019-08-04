@@ -21,6 +21,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.cassandra.Util;
+import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.cassandra.cql3.CQLTester;
@@ -33,7 +35,7 @@ import static org.junit.Assert.fail;
 public class CompactionsCQLTest extends CQLTester
 {
 
-    public static final int SLEEP_TIME = 5000;
+    public static final int SLEEP_TIME = 10000;
 
     @Test
     public void testTriggerMinorCompactionSTCS() throws Throwable
@@ -59,7 +61,6 @@ public class CompactionsCQLTest extends CQLTester
         waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);
     }
 
-
     @Test
     public void testTriggerMinorCompactionDTCS() throws Throwable
     {
@@ -84,6 +85,71 @@ public class CompactionsCQLTest extends CQLTester
         waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);
     }
 
+    @Test
+    public void testTriggerMinorCompactionTOKCSCompactTombstones() throws Throwable
+    {
+        createTable("CREATE TABLE %s (id TIMESTAMP, id_ck TIMESTAMP, PRIMARY KEY(id, id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0));
+        assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
+        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(1), Util.dt(1));
+        execute("delete from %s where id = ? and id_ck = ?", Util.dt(1), Util.dt(1));
+        flush();
+        execute("delete from %s where id = ? and id_ck = ?", Util.dt(1), Util.dt(1));
+        flush();
+
+        // Compaction strategy will actually ignore the 2 sstables for the remaining of the minute.
+        waitForMinor(KEYSPACE, currentTable(), Util.timeUptoNearestSeconds(60) * 1000, false);
+
+        // We are forcing a flush so that compaction controller can look for compaction again.
+        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(2), Util.dt(2));
+        flush();
+        // now we expect a compaction.
+        waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);
+
+        Assert.assertEquals(1, getCurrentColumnFamilyStore().getTracker().getView().liveSSTables().size());
+    }
+
+    @Test
+    public void testTriggerMinorCompactionTOKCSCompactTombstoneWithData() throws Throwable
+    {
+        createTable("CREATE TABLE %s (id TIMESTAMP, id_ck TIMESTAMP, PRIMARY KEY(id, id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0));
+        assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
+        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(1), Util.dt(1));
+        flush();
+        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(2), Util.dt(2));
+        execute("delete from %s where id = ? and id_ck = ?", Util.dt(1), Util.dt(1));
+        flush();
+
+        waitForMinor(KEYSPACE, currentTable(), Util.timeUptoNearestSeconds(60) * 1000, false);
+
+        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(3), Util.dt(3));
+        flush();
+
+        waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);
+
+        Assert.assertEquals(2, getCurrentColumnFamilyStore().getTracker().getView().liveSSTables().size());
+    }
+
+    @Test
+    public void testTriggerMinorCompactionTOKCSCompactTombstoneSplitting() throws Throwable
+    {
+        createTable("CREATE TABLE %s (id TIMESTAMP, id_ck TIMESTAMP, PRIMARY KEY(id, id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 120));
+        assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
+        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(121), Util.dt(121));
+        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(122), Util.dt(122));
+        execute("delete from %s where id = ? and id_ck = ?", Util.dt(0), Util.dt(0));
+        execute("delete from %s where id = ? and id_ck = ?", Util.dt(61), Util.dt(61));
+        flush();
+
+        waitForMinor(KEYSPACE, currentTable(), Util.timeUptoNearestSeconds(60) * 1000, false);
+
+        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(123), Util.dt(123));
+        flush();
+
+        waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);
+
+        // 2 tomstone sstable, 2 data sstables
+        Assert.assertEquals(4, getCurrentColumnFamilyStore().getTracker().getView().liveSSTables().size());
+    }
 
     @Test
     public void testTriggerNoMinorCompactionSTCSDisabled() throws Throwable
