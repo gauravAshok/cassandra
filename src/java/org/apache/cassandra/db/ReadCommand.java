@@ -953,6 +953,8 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
                 limits = DataLimits.distinctLimits(maxResults);
             else if (compositesToGroup == -1)
                 limits = DataLimits.thriftLimits(maxResults, perPartitionLimit);
+            else if (metadata.isStaticCompactTable())
+                limits = DataLimits.legacyCompactStaticCqlLimits(maxResults);
             else
                 limits = DataLimits.cqlLimits(maxResults);
 
@@ -1435,7 +1437,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
                 {
                     cellName = LegacyLayout.decodeCellName(metadata, buffer);
                 }
-                catch (UnknownColumnException exc)
+                catch (UnknownColumnException | IllegalLegacyColumnException exc)
                 {
                     // TODO this probably needs a new exception class that shares a parent with UnknownColumnFamilyException
                     throw new UnknownColumnFamilyException(
