@@ -127,9 +127,9 @@ final class TimeOrderedKeyCompactionStrategyOptions
         try
         {
             Pair<Long, Double> threshold = parseSizeThreshold(optionValue);
-            if (threshold.left < 1 || threshold.right <= 0.0)
+            if (threshold.left < 0 || threshold.right < 0.0 || threshold.right > 100.0)
             {
-                throw new ConfigurationException(String.format("(%d, %f) must be greater than (0,0) for %s", threshold.left, threshold.right, WINDOW_GARBAGE_SIZE_THRESHOLD_KEY));
+                throw new ConfigurationException(String.format("(%d, %f) must be >= (0,0) for %s", threshold.left, threshold.right, WINDOW_GARBAGE_SIZE_THRESHOLD_KEY));
             }
         }
         catch (NumberFormatException e)
@@ -141,9 +141,9 @@ final class TimeOrderedKeyCompactionStrategyOptions
         try
         {
             Pair<Long, Double> threshold = parseSizeThreshold(optionValue);
-            if (threshold.left < 1 || threshold.right <= 0.0)
+            if (threshold.left < 0 || threshold.right < 0.0 || threshold.right > 100.0)
             {
-                throw new ConfigurationException(String.format("(%d, %f) must be greater than (0,0) for %s", threshold.left, threshold.right, GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY));
+                throw new ConfigurationException(String.format("(%d, %f) must be >= (0,0) for %s", threshold.left, threshold.right, GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY));
             }
         }
         catch (NumberFormatException e)

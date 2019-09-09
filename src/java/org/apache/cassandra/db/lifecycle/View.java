@@ -81,14 +81,14 @@ public class View
     final SSTableTimeIntervalTree timeIntervalTree;
 
     final boolean isDummy;
-    final TimeOrdered timeOrderedCkStatus;
+    final TimeOrdered timeOrderedKeyStatus;
 
     View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, boolean isDummy)
     {
         this(liveMemtables, flushingMemtables, sstables, compacting, intervalTree, SSTableTimeIntervalTree.empty(), isDummy ? TimeOrdered.NO : TimeOrdered.UNKNOWN, isDummy);
     }
 
-    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, SSTableTimeIntervalTree timeIntervalTree, TimeOrdered timeOrderedCkStatus, boolean isDummy)
+    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, SSTableTimeIntervalTree timeIntervalTree, TimeOrdered timeOrderedKeyStatus, boolean isDummy)
     {
         assert liveMemtables != null;
         assert flushingMemtables != null;
@@ -106,25 +106,25 @@ public class View
         this.intervalTree = intervalTree;
         this.isDummy = isDummy;
 
-        if (timeOrderedCkStatus == TimeOrdered.UNKNOWN)
+        if (timeOrderedKeyStatus == TimeOrdered.UNKNOWN)
         {
             Pair<String, String> kscf = findKSCF();
             if (kscf != null)
             {
                 // if kscf is non null, we should be able to get out the table properties.
-                boolean isTimeOrdered = isTimeOrderedCK(kscf);
-                this.timeOrderedCkStatus = isTimeOrdered ? TimeOrdered.YES : TimeOrdered.NO;
+                boolean isTimeOrdered = isTimeOrderedKey(kscf);
+                this.timeOrderedKeyStatus = isTimeOrdered ? TimeOrdered.YES : TimeOrdered.NO;
                 this.timeIntervalTree = isTimeOrdered ? SSTableTimeIntervalTree.build(this.sstablesMap.keySet()) : SSTableTimeIntervalTree.empty();
             }
             else
             {
-                this.timeOrderedCkStatus = TimeOrdered.UNKNOWN;
+                this.timeOrderedKeyStatus = TimeOrdered.UNKNOWN;
                 this.timeIntervalTree = SSTableTimeIntervalTree.empty();
             }
         }
         else
         {
-            this.timeOrderedCkStatus = timeOrderedCkStatus;
+            this.timeOrderedKeyStatus = timeOrderedKeyStatus;
             this.timeIntervalTree = timeIntervalTree;
         }
 
@@ -213,7 +213,7 @@ public class View
     public String toString()
     {
         return String.format("View(pending_count=%d, sstables=%s, compacting=%s, keyOrdered=%s)", liveMemtables.size() + flushingMemtables.size() - 1, sstables,
-                compacting, timeOrderedCkStatus);
+                compacting, timeOrderedKeyStatus);
     }
 
     /**
@@ -272,7 +272,7 @@ public class View
         assert sstableSet == SSTableSet.LIVE;
         return (view) -> {
             view.findAndLogKSCF("select");
-            if(view.timeOrderedCkStatus == TimeOrdered.YES)
+            if(view.timeOrderedKeyStatus == TimeOrdered.YES)
             {
                 return selectBasedOnTime(view, sstableSet, key);
             }
@@ -314,7 +314,7 @@ public class View
             view.findAndLogKSCF("update compacting");
             assert all(mark, Helpers.idIn(view.sstablesMap));
             return new View(view.liveMemtables, view.flushingMemtables, view.sstablesMap,
-                            replace(view.compactingMap, unmark, mark), view.intervalTree, view.timeIntervalTree, view.timeOrderedCkStatus, view.isDummy);
+                            replace(view.compactingMap, unmark, mark), view.intervalTree, view.timeIntervalTree, view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
@@ -341,8 +341,8 @@ public class View
             Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, remove, add);
 
             return new View(view.liveMemtables, view.flushingMemtables, sstableMap, view.compactingMap, SSTableIntervalTree.build(sstableMap.keySet()),
-                    view.timeOrderedCkStatus == TimeOrdered.YES ? SSTableTimeIntervalTree.build(sstableMap.keySet()) : SSTableTimeIntervalTree.empty(),
-                    view.timeOrderedCkStatus, view.isDummy);
+                    view.timeOrderedKeyStatus == TimeOrdered.YES ? SSTableTimeIntervalTree.build(sstableMap.keySet()) : SSTableTimeIntervalTree.empty(),
+                    view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
@@ -353,7 +353,7 @@ public class View
             view.findAndLogKSCF("switch memtable");
             List<Memtable> newLive = ImmutableList.<Memtable>builder().addAll(view.liveMemtables).add(newMemtable).build();
             assert newLive.size() == view.liveMemtables.size() + 1;
-            return new View(newLive, view.flushingMemtables, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedCkStatus, view.isDummy);
+            return new View(newLive, view.flushingMemtables, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
@@ -369,7 +369,7 @@ public class View
                                                        filter(flushing, not(lessThan(toFlush)))));
             assert newLive.size() == live.size() - 1;
             assert newFlushing.size() == flushing.size() + 1;
-            return new View(newLive, newFlushing, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedCkStatus, view.isDummy);
+            return new View(newLive, newFlushing, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
@@ -383,12 +383,12 @@ public class View
 
             if (flushed == null || Iterables.isEmpty(flushed))
                 return new View(view.liveMemtables, flushingMemtables, view.sstablesMap,
-                                view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedCkStatus, view.isDummy);
+                                view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedKeyStatus, view.isDummy);
 
             Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, emptySet(), flushed);
 
             return new View(view.liveMemtables, flushingMemtables, sstableMap, view.compactingMap, SSTableIntervalTree.build(sstableMap.keySet()),
-                    view.timeOrderedCkStatus == TimeOrdered.YES ? SSTableTimeIntervalTree.build(sstableMap.keySet()) : null, view.timeOrderedCkStatus, view.isDummy);
+                    view.timeOrderedKeyStatus == TimeOrdered.YES ? SSTableTimeIntervalTree.build(sstableMap.keySet()) : null, view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
@@ -429,13 +429,13 @@ public class View
         return null;
     }
 
-    private static boolean isTimeOrderedCK(Pair<String, String> kscf) {
+    private static boolean isTimeOrderedKey(Pair<String, String> kscf) {
         if(kscf != null)
         {
             boolean isSystemKeyspace = SchemaConstants.isLocalSystemKeyspace(kscf.left) || SchemaConstants.isReplicatedSystemKeyspace(kscf.left);
             if(!isSystemKeyspace) {
                 ColumnFamilyStore cfs = ColumnFamilyStore.getWithoutInitiatingOpen(kscf.left, kscf.right);
-                return cfs != null && cfs.metadata.params.timeOrderedCK;
+                return cfs != null && cfs.metadata.params.timeOrderedKey;
             }
         }
         return false;

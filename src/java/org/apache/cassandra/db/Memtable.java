@@ -304,7 +304,7 @@ public class Memtable implements Comparable<Memtable>
         List<PartitionPosition> boundaries = diskBoundaries.positions;
         List<Directories.DataDirectory> locations = diskBoundaries.directories;
         if (boundaries == null)
-            return Collections.singletonList(new FlushRunnable(txn, cfs.clusteringKeyOrderedByTime()));
+            return Collections.singletonList(new FlushRunnable(txn, cfs.timeOrderedKey()));
 
         List<FlushRunnable> runnables = new ArrayList<>(boundaries.size());
         PartitionPosition rangeStart = cfs.getPartitioner().getMinimumToken().minKeyBound();
@@ -313,7 +313,7 @@ public class Memtable implements Comparable<Memtable>
             for (int i = 0; i < boundaries.size(); i++)
             {
                 PartitionPosition t = boundaries.get(i);
-                runnables.add(new FlushRunnable(rangeStart, t, locations.get(i), txn, cfs.clusteringKeyOrderedByTime()));
+                runnables.add(new FlushRunnable(rangeStart, t, locations.get(i), txn, cfs.timeOrderedKey()));
                 rangeStart = t;
             }
             return runnables;
@@ -533,7 +533,7 @@ public class Memtable implements Comparable<Memtable>
                                                   PartitionColumns columns,
                                                   EncodingStats stats, int level)
         {
-            MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata.comparator)
+            MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata.comparator, cfs.timeOrderedKey())
                     .commitLogIntervals(new IntervalSet<>(commitLogLowerBound.get(), commitLogUpperBound.get())).sstableLevel(level);
 
             return cfs.createSSTableMultiWriter(Descriptor.fromFilename(filename),
@@ -557,7 +557,7 @@ public class Memtable implements Comparable<Memtable>
      */
     private static class TombstoneMaskUnfilteredRowIterator implements UnfilteredRowIterator
     {
-        private static final boolean optimizeFlush = Boolean.parseBoolean(System.getProperty("optimizeMemtableFlush", "false"));
+        private static final boolean optimizeFlush = Boolean.getBoolean("cassandra.optimizeMemtableFlush");
 
         private final UnfilteredRowIterator baseIterator;
         private final boolean maskTombstones;

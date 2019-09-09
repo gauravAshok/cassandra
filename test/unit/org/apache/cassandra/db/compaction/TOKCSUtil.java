@@ -20,6 +20,7 @@ package org.apache.cassandra.db.compaction;
 
 import org.apache.cassandra.Util;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -30,53 +31,82 @@ import java.util.Map;
 
 public class TOKCSUtil
 {
-    public static void insertStandard1(ColumnFamilyStore cfs, int i) {
+    public static void insertStandard1(ColumnFamilyStore cfs, int i)
+    {
+        insertStandard1(cfs, FBUtilities.nowInSeconds(), i, i, null);
+    }
+
+    public static void insertStandard1(ColumnFamilyStore cfs, long timestampInSec, int i, int j, String payload)
+    {
         Date key = Util.dt(i);
-        ByteBuffer keyBuf = ByteBufferUtil.bytes(key.getTime());
-        new RowUpdateBuilder(cfs.metadata, System.currentTimeMillis(), keyBuf)
-                .clustering(key, String.valueOf(key))
-                .add("val", "val_" + key)
-                .add("val0", "val0_" + key)
+        payload = payload == null ? key.toString() : payload;
+        new RowUpdateBuilder(cfs.metadata, timestampInSec * 1000000L, Util.dk(key.getTime(), 1000))
+                .clustering(String.valueOf(j))
+                .add("val0", "val0_" + payload)
                 .build()
                 .applyUnsafe();
     }
 
-    public static void deleteStandard1(ColumnFamilyStore cfs, int i) {
-        Date key = Util.dt(i);
-        long timestamp = System.currentTimeMillis();
-        RowUpdateBuilder.deleteRow(cfs.metadata, timestamp, key, key, String.valueOf(key)).applyUnsafe();
+    public static void deleteStandard1(ColumnFamilyStore cfs, int i)
+    {
+        deleteStandard1(cfs, FBUtilities.nowInSeconds(), i, i);
     }
 
-    public static void deleteRangeStandard1(ColumnFamilyStore cfs, int i) {
-        long timestamp = System.currentTimeMillis();
+    public static void deleteStandard1(ColumnFamilyStore cfs, int timestampInSec, int i, int j)
+    {
+        DecoratedKey key = Util.dk(Util.dt(i).getTime(), 1000);
+        RowUpdateBuilder.deleteRowAt(cfs.metadata, timestampInSec * 1000000L, timestampInSec, key, String.valueOf(j)).applyUnsafe();
+    }
+
+    public static void deleteStandard1ByPartitionKey(ColumnFamilyStore cfs, int i)
+    {
+        deleteStandard1ByPartitionKey(cfs, FBUtilities.nowInSeconds(), i);
+    }
+
+    public static void deleteStandard1ByPartitionKey(ColumnFamilyStore cfs, int timestampInSec, int i)
+    {
+        Date key = Util.dt(i);
+        PartitionUpdate update = PartitionUpdate.fullPartitionDelete(cfs.metadata, Util.dk(key.getTime(), 1000), timestampInSec * 1000000L, timestampInSec);
+        new Mutation(update.metadata().ksName, update.partitionKey()).add(update).applyUnsafe();
+    }
+
+    public static void deleteRangeStandard1(ColumnFamilyStore cfs, int i)
+    {
+        deleteRangeStandard1(cfs, FBUtilities.nowInSeconds(), i, i, i);
+    }
+
+    public static void deleteRangeStandard1(ColumnFamilyStore cfs, int timestampInSec, int i, int from, int to)
+    {
         int timeInSec = FBUtilities.nowInSeconds();
         Date key = Util.dt(i);
 
-        RowUpdateBuilder deletedRowUpdateBuilder = new RowUpdateBuilder(cfs.metadata, timestamp, ByteBufferUtil.bytes(key.getTime()));
+        RowUpdateBuilder deletedRowUpdateBuilder = new RowUpdateBuilder(cfs.metadata, timestampInSec * 1000000L, Util.dk(key.getTime(), 1000));
 
-        ByteBuffer[] buffers = {
-                ByteBufferUtil.bytes(key.getTime()),
-                ByteBufferUtil.bytes(String.valueOf(key))
-        };
+        Clustering startClustering = Clustering.make(ByteBufferUtil.bytes(String.valueOf(from)));
+        Clustering endClustering = Clustering.make(ByteBufferUtil.bytes(String.valueOf(to)));
 
-        Clustering startClustering = Clustering.make(buffers);
-        Clustering endClustering = Clustering.make(buffers);
-        deletedRowUpdateBuilder.addRangeTombstone(new RangeTombstone(Slice.make(startClustering, endClustering), new DeletionTime(timestamp, timeInSec)));
+        deletedRowUpdateBuilder.addRangeTombstone(new RangeTombstone(Slice.make(startClustering, endClustering), new DeletionTime(timestampInSec, timeInSec)));
         deletedRowUpdateBuilder.build().applyUnsafe();
 
         cfs.forceBlockingFlush();
     }
 
-    public static Map<String, String> getDefaultTOKCSOptions() {
+    public static Map<String, String> getDefaultTOKCSOptions()
+    {
+        return getTOKCSOptions("128,50", "1024,50", 1);
+    }
+
+    public static Map<String, String> getTOKCSOptions(String windowGarbageThreshold, String globalGarbageThreshold, int compactionWindowSize) {
         Map<String, String> options = new HashMap<>();
-        options.put(TimeOrderedKeyCompactionStrategyOptions.WINDOW_GARBAGE_SIZE_THRESHOLD_KEY, "128,50");
-        options.put(TimeOrderedKeyCompactionStrategyOptions.GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY, "1024,50");
-        options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, "1");
+        options.put(TimeOrderedKeyCompactionStrategyOptions.WINDOW_GARBAGE_SIZE_THRESHOLD_KEY, windowGarbageThreshold);
+        options.put(TimeOrderedKeyCompactionStrategyOptions.GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY, globalGarbageThreshold);
+        options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, String.valueOf(compactionWindowSize));
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY, "MINUTES");
         return options;
     }
 
-    public static String getCQLFramgentForTOKCS(String threshold, int gcGraceSec) {
+    public static String getCQLFramgentForTOKCS(String threshold, int gcGraceSec)
+    {
         return String.format("WITH compaction = {" +
                 "'class':'org.apache.cassandra.db.compaction.TimeOrderedKeyCompactionStrategy', " +
                 "'compaction_window_unit':'MINUTES', " +
@@ -84,7 +114,7 @@ public class TOKCSUtil
                 "'window_garbage_size_threshold':'%s', " +
                 "'global_garbage_size_threshold':'%s'" +
                 "} " +
-                "AND time_ordered_ck = true " +
+                "AND time_ordered_key = true " +
                 "AND gc_grace_seconds = %d", threshold, threshold, gcGraceSec);
     }
 }

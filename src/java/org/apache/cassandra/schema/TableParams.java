@@ -52,7 +52,7 @@ public final class TableParams
         SPECULATIVE_RETRY,
         CRC_CHECK_CHANCE,
         CDC,
-        TIME_ORDERED_CK;
+        TIME_ORDERED_KEY;
 
         @Override
         public String toString()
@@ -70,7 +70,7 @@ public final class TableParams
     public static final int DEFAULT_MIN_INDEX_INTERVAL = 128;
     public static final int DEFAULT_MAX_INDEX_INTERVAL = 2048;
     public static final double DEFAULT_CRC_CHECK_CHANCE = 1.0;
-    public static final boolean DEFAULT_TIME_ORDERED_CK = false;
+    public static final boolean DEFAULT_TIME_ORDERED_KEY = false;
 
     public final String comment;
     public final double readRepairChance;
@@ -88,7 +88,7 @@ public final class TableParams
     public final CompressionParams compression;
     public final ImmutableMap<String, ByteBuffer> extensions;
     public final boolean cdc;
-    public final boolean timeOrderedCK;
+    public final boolean timeOrderedKey;
 
     private TableParams(Builder builder)
     {
@@ -110,7 +110,7 @@ public final class TableParams
         compression = builder.compression;
         extensions = builder.extensions;
         cdc = builder.cdc;
-        timeOrderedCK = builder.timeOrderedCK;
+        timeOrderedKey = builder.timeOrderedKey;
     }
 
     public static Builder builder()
@@ -136,7 +136,7 @@ public final class TableParams
                             .speculativeRetry(params.speculativeRetry)
                             .extensions(params.extensions)
                             .cdc(params.cdc)
-                            .timeOrderedCK(params.timeOrderedCK);
+                            .timeOrderedKey(params.timeOrderedKey);
     }
 
     public void validate()
@@ -231,7 +231,7 @@ public final class TableParams
             && compression.equals(p.compression)
             && extensions.equals(p.extensions)
             && cdc == p.cdc
-            && timeOrderedCK == p.timeOrderedCK;
+            && timeOrderedKey == p.timeOrderedKey;
     }
 
     @Override
@@ -253,7 +253,7 @@ public final class TableParams
                                 compression,
                                 extensions,
                                 cdc,
-                                timeOrderedCK);
+                timeOrderedKey);
     }
 
     @Override
@@ -277,7 +277,7 @@ public final class TableParams
                           .add(Option.COMPRESSION.toString(), compression)
                           .add(Option.EXTENSIONS.toString(), extensions)
                           .add(Option.CDC.toString(), cdc)
-                          .add(Option.TIME_ORDERED_CK.toString(), timeOrderedCK)
+                          .add(Option.TIME_ORDERED_KEY.toString(), timeOrderedKey)
                           .toString();
     }
 
@@ -299,7 +299,7 @@ public final class TableParams
         private CompressionParams compression = CompressionParams.DEFAULT;
         private ImmutableMap<String, ByteBuffer> extensions = ImmutableMap.of();
         private boolean cdc;
-        private boolean timeOrderedCK = DEFAULT_TIME_ORDERED_CK;
+        private boolean timeOrderedKey = DEFAULT_TIME_ORDERED_KEY;
 
         public Builder()
         {
@@ -328,9 +328,9 @@ public final class TableParams
             return this;
         }
 
-        public Builder timeOrderedCK(boolean val)
+        public Builder timeOrderedKey(boolean val)
         {
-            timeOrderedCK = val;
+            timeOrderedKey = val;
             return this;
         }
 

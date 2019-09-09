@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.apache.cassandra.db.lifecycle.LifecycleNewTracker;
+import org.apache.cassandra.db.partitions.PartitionStatisticsCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -235,6 +236,9 @@ public class BigTableWriter extends SSTableWriter
         {
             collector.updateClusteringValues(row.clustering());
             cellCount += Rows.collectStats(row, collector);
+            if(!row.deletion().isLive()) {
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.ROW);
+            }
             return row;
         }
 
@@ -247,10 +251,13 @@ public class BigTableWriter extends SSTableWriter
                 RangeTombstoneBoundaryMarker bm = (RangeTombstoneBoundaryMarker)marker;
                 collector.update(bm.endDeletionTime());
                 collector.update(bm.startDeletionTime());
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.RANGE);
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.RANGE);
             }
             else
             {
                 collector.update(((RangeTombstoneBoundMarker)marker).deletionTime());
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.RANGE);
             }
             return marker;
         }
@@ -265,6 +272,9 @@ public class BigTableWriter extends SSTableWriter
         public DeletionTime applyToDeletion(DeletionTime deletionTime)
         {
             collector.update(deletionTime);
+            if(!deletionTime.isLive()) {
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.PARTITION);
+            }
             return deletionTime;
         }
     }

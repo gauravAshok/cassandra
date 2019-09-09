@@ -32,6 +32,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
@@ -100,6 +101,17 @@ public class Util
     public static DecoratedKey dk(ByteBuffer key)
     {
         return testPartitioner().decorateKey(key);
+    }
+
+    public static DecoratedKey dk(long ts, int duration)
+    {
+        ByteBuffer bf = ByteBuffer.allocate(2 + 8 + 4);
+        bf.putShort((short)12);
+        bf.putLong(ts);
+        bf.putInt(duration);
+        bf.flip();
+
+        return testPartitioner().decorateKey(bf);
     }
 
     public static PartitionPosition rp(String key)
@@ -724,4 +736,17 @@ public class Util
         int waitTime = window - (FBUtilities.nowInSeconds() % window);
         return waitTime;
     }
+
+    public static Set<SSTableReader> tombstonesOnly(Collection<SSTableReader> sstables) {
+        return sstables.stream()
+                .filter(s -> s.getSSTableMetadata().sstableLevel == Memtable.TOMBSTONE_SSTABLE_LVL)
+                .collect(Collectors.toSet());
+    }
+
+    public static Set<SSTableReader> dataOnly(Collection<SSTableReader> sstables) {
+        return sstables.stream()
+                .filter(s -> s.getSSTableMetadata().sstableLevel == Memtable.DATA_SSTABLE_LVL)
+                .collect(Collectors.toSet());
+    }
+
 }

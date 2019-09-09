@@ -110,7 +110,7 @@ public class BigFormat implements SSTableFormat
     // we always incremented the major version.
     static class BigVersion extends Version
     {
-        public static final String current_version = "md";
+        public static final String current_version = "mdn";
         public static final String earliest_supported_version = "jb";
 
         // jb (2.0.1): switch from crc32 to adler32 for compression checksums
@@ -126,6 +126,7 @@ public class BigFormat implements SSTableFormat
         // mb (3.0.7, 3.7): commit log lower bound included
         // mc (3.0.8, 3.9): commit log intervals included
         // md (3.0.18, 3.11.4): corrected sstable min/max clustering
+        // mdn (3.11.4): now recording first partition key range for selected tables and tombstone counts in sstable metadata.
         //
         // NOTE: when adding a new version, please add that to LegacySSTableTest, too.
 
@@ -148,6 +149,8 @@ public class BigFormat implements SSTableFormat
         private final boolean hasCommitLogLowerBound;
         private final boolean hasCommitLogIntervals;
         private final boolean hasAccurateMinMax;
+        private final boolean hasFirstKeyRange;
+        private final boolean hasTombstoneCounts;
 
         /**
          * CASSANDRA-7066: compaction ancerstors are no longer used and have been removed.
@@ -191,6 +194,8 @@ public class BigFormat implements SSTableFormat
                                      || version.compareTo("mb") >= 0;
             hasCommitLogIntervals = version.compareTo("mc") >= 0;
             hasAccurateMinMax = version.compareTo("md") >= 0;
+            hasFirstKeyRange = version.compareTo("md") > 0 && version.length() > 2;
+            hasTombstoneCounts = version.compareTo("md") > 0 && version.length() > 2;
         }
 
         @Override
@@ -269,6 +274,18 @@ public class BigFormat implements SSTableFormat
         public boolean hasAccurateMinMax()
         {
             return hasAccurateMinMax;
+        }
+
+        @Override
+        public boolean hasFirstKeyRange()
+        {
+            return hasFirstKeyRange;
+        }
+
+        @Override
+        public boolean hasTombstoneCounts()
+        {
+            return hasTombstoneCounts;
         }
 
         @Override

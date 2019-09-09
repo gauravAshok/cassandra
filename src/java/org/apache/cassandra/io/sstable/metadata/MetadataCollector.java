@@ -19,14 +19,12 @@ package org.apache.cassandra.io.sstable.metadata;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Maps;
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
 import com.clearspring.analytics.stream.cardinality.ICardinality;
@@ -85,11 +83,13 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                  true,
                                  ActiveRepairService.UNREPAIRED_SSTABLE,
                                  -1,
-                                 -1);
+                                 -1,
+                                 0, 0,
+                                 0, 0, 0);
     }
 
     protected EstimatedHistogram estimatedPartitionSize = defaultPartitionSizeHistogram();
-    // TODO: cound the number of row per partition (either with the number of cells, or instead)
+    // TODO: count the number of row per partition (either with the number of cells, or instead)
     protected EstimatedHistogram estimatedCellPerPartitionCount = defaultCellPerPartitionCountHistogram();
     protected IntervalSet<CommitLogPosition> commitLogIntervals = IntervalSet.empty();
     protected final MinMaxLongTracker timestampTracker = new MinMaxLongTracker();
@@ -103,7 +103,10 @@ public class MetadataCollector implements PartitionStatisticsCollector
     protected boolean hasLegacyCounterShards = false;
     protected long totalColumnsSet;
     protected long totalRows;
+    protected MinMaxLongTracker keyRangeTracker = new MinMaxLongTracker(Long.MAX_VALUE, Long.MIN_VALUE);
+    protected long partitionTombstones = 0, rowTombstones = 0, rangeTombstones = 0;
 
+    private final boolean trackKeyRange;
     /**
      * Default cardinality estimation method is to use HyperLogLog++.
      * Parameter here(p=13, sp=25) should give reasonable estimation
@@ -113,15 +116,20 @@ public class MetadataCollector implements PartitionStatisticsCollector
     protected ICardinality cardinality = new HyperLogLogPlus(13, 25);
     private final ClusteringComparator comparator;
 
-    public MetadataCollector(ClusteringComparator comparator)
+    public MetadataCollector(ClusteringComparator comparator, boolean trackKeyRange)
     {
         this.comparator = comparator;
-
+        this.trackKeyRange = trackKeyRange;
     }
 
-    public MetadataCollector(Iterable<SSTableReader> sstables, ClusteringComparator comparator, int level)
+    public MetadataCollector(ClusteringComparator comparator)
     {
-        this(comparator);
+        this(comparator, false);
+    }
+
+    public MetadataCollector(Iterable<SSTableReader> sstables, ClusteringComparator comparator, boolean trackKeyRange, int level)
+    {
+        this(comparator, trackKeyRange);
 
         IntervalSet.Builder<CommitLogPosition> intervals = new IntervalSet.Builder<>();
         for (SSTableReader sstable : sstables)
@@ -137,6 +145,12 @@ public class MetadataCollector implements PartitionStatisticsCollector
     {
         long hashed = MurmurHash.hash2_64(key, key.position(), key.remaining(), 0);
         cardinality.offerHashed(hashed);
+        if(trackKeyRange)
+        {
+            DecoratedKey.TimeWindow tw = DecoratedKey.interpretTimeBucket(key);
+            keyRangeTracker.update(tw.ts);
+            keyRangeTracker.update(tw.ts + tw.durationMs);
+        }
         return this;
     }
 
@@ -168,6 +182,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
         return this;
     }
 
+    @Override
     public void update(LivenessInfo newInfo)
     {
         if (newInfo.isEmpty())
@@ -178,6 +193,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
         updateLocalDeletionTime(newInfo.localExpirationTime());
     }
 
+    @Override
     public void update(Cell cell)
     {
         updateTimestamp(cell.timestamp());
@@ -185,6 +201,23 @@ public class MetadataCollector implements PartitionStatisticsCollector
         updateLocalDeletionTime(cell.localDeletionTime());
     }
 
+    @Override
+    public void updateDeletionFor(DeletionFor deletionFor)
+    {
+        switch (deletionFor) {
+            case RANGE:
+                rangeTombstones += 1;
+                return;
+            case ROW:
+                rowTombstones += 1;
+                return;
+            case PARTITION:
+                partitionTombstones += 1;
+                return;
+        }
+    }
+
+    @Override
     public void update(DeletionTime dt)
     {
         if (!dt.isLive())
@@ -194,6 +227,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
         }
     }
 
+    @Override
     public void updateColumnSetPerRow(long columnSetInRow)
     {
         totalColumnsSet += columnSetInRow;
@@ -267,6 +301,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
         return b2;
     }
 
+    @Override
     public void updateHasLegacyCounterShards(boolean hasLegacyCounterShards)
     {
         this.hasLegacyCounterShards = this.hasLegacyCounterShards || hasLegacyCounterShards;
@@ -297,7 +332,9 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                                              hasLegacyCounterShards,
                                                              repairedAt,
                                                              totalColumnsSet,
-                                                             totalRows));
+                                                             totalRows,
+                                                             keyRangeTracker.min, keyRangeTracker.max,
+                                                             partitionTombstones, rowTombstones, rangeTombstones));
         components.put(MetadataType.COMPACTION, new CompactionMetadata(cardinality));
         components.put(MetadataType.HEADER, header.toComponent());
         return components;

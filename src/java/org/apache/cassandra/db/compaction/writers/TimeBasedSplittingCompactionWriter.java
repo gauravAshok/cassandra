@@ -39,7 +39,6 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     private final Set<SSTableReader> allSSTables;
     private SSTableWriter[] ssTableWriters;
     private Directories.DataDirectory sstableDirectory;
-    private final boolean multiKeyPartition;
 
     public TimeBasedSplittingCompactionWriter(
             ColumnFamilyStore cfs,
@@ -47,7 +46,6 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
             LifecycleTransaction txn,
             Set<SSTableReader> nonExpiredSSTables,
             boolean keepOriginals,
-            boolean multiKeyPartition,
             long windowSizeInSec,
             long windowStartInMin,
             long windowCount,
@@ -55,7 +53,6 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     {
 
         super(cfs, directories, txn, nonExpiredSSTables, keepOriginals);
-        this.multiKeyPartition = multiKeyPartition;
         this.windowSizeInSec = windowSizeInSec;
         this.windowStartInSec = windowStartInMin;
         this.windowCount = windowCount;
@@ -67,7 +64,6 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     @Override
     protected boolean realAppend(UnfilteredRowIterator partition)
     {
-
         int windowIndex = getWindowIndex(partition.partitionKey());
 
         if (ssTableWriters[windowIndex] == null)
@@ -86,7 +82,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
 
     private int getWindowIndex(DecoratedKey pk)
     {
-        long ts = multiKeyPartition ? pk.getFirstKeyAsLong() : pk.getKeyAsLong();
+        long ts = pk.interpretTimeBucket().ts;
         long delta = TimeUnit.SECONDS.convert(ts, TimeUnit.MILLISECONDS) - windowStartInSec;
         return (int) (delta / windowSizeInSec);
     }
@@ -107,7 +103,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
                 estimatedTotalKeys / windowCount,
                 minRepairedAt,
                 cfs.metadata,
-                new MetadataCollector(allSSTables, cfs.metadata.comparator, level),
+                new MetadataCollector(allSSTables, cfs.metadata.comparator, cfs.timeOrderedKey(), level),
                 SerializationHeader.make(cfs.metadata, nonExpiredSSTables),
                 cfs.indexManager.listIndexes(),
                 txn);

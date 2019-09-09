@@ -211,7 +211,7 @@ public class Tracker
                     Collections.emptyMap(),
                     SSTableIntervalTree.empty(),
                     SSTableTimeIntervalTree.empty(),
-                    cfstore.clusteringKeyOrderedByTime() ? View.TimeOrdered.YES : View.TimeOrdered.NO,
+                    cfstore.timeOrderedKey() ? View.TimeOrdered.YES : View.TimeOrdered.NO,
                     isDummy()));
         }
         else

@@ -384,8 +384,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         return compactionStrategyManager.getCompactionParams().asMap();
     }
 
-    public boolean clusteringKeyOrderedByTime() {
-        return metadata.params.timeOrderedCK;
+    public boolean timeOrderedKey() {
+        return metadata.params.timeOrderedKey;
     }
 
     public Map<String,String> getCompressionParameters()
@@ -531,7 +531,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public SSTableMultiWriter createSSTableMultiWriter(Descriptor descriptor, long keyCount, long repairedAt, int sstableLevel, SerializationHeader header, LifecycleNewTracker lifecycleNewTracker)
     {
-        MetadataCollector collector = new MetadataCollector(metadata.comparator).sstableLevel(sstableLevel);
+        MetadataCollector collector = new MetadataCollector(metadata.comparator, timeOrderedKey()).sstableLevel(sstableLevel);
         return createSSTableMultiWriter(descriptor, keyCount, repairedAt, collector, header, lifecycleNewTracker);
     }
 

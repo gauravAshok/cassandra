@@ -24,29 +24,29 @@ import org.junit.Test;
 
 import static junit.framework.Assert.assertFalse;
 
-public class CreateWithTimeOrderedCkTest extends CQLTester
+public class CreateWithTimeOrderedKeyTest extends CQLTester
 {
     @Test
     public void testCQL3PartitionKeyOnlyTable()
     {
-        createTable("CREATE TABLE %s (id TIMESTAMP, id_ck TIMESTAMP, PRIMARY KEY(id, id_ck)) WITH time_ordered_ck = true;");
+        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, PRIMARY KEY((id, duration_ms)) ) WITH time_ordered_key = true;");
         assertFalse(currentTableMetadata().isThriftCompatible());
     }
 
     @Test
     public void testCreateTableWithSmallintColumns() throws Throwable
     {
-        createTable("CREATE TABLE %s (t TIMESTAMP, a text, t_ck TIMESTAMP, b smallint, c smallint, primary key ((t, a), t_ck, b)) WITH time_ordered_ck = true;");
-        execute("INSERT INTO %s (t, a, t_ck, b, c) VALUES (?, ?, ?, ?, ?)", Util.dt(0), "1", Util.dt(0), (short)1, (short)2);
-        execute("INSERT INTO %s (t, a, t_ck, b, c) VALUES (?, ?, ?, ?, ?)", Util.dt(1), "2", Util.dt(1), Short.MAX_VALUE, Short.MIN_VALUE);
+        createTable("CREATE TABLE %s (t TIMESTAMP, duration_ms INT, a text, b smallint, c smallint, primary key ((t, duration_ms, a), b)) WITH time_ordered_key = true;");
+        execute("INSERT INTO %s (t, duration_ms, a, b, c) VALUES (?, ?, ?, ?, ?)", Util.dt(0), 1, "1", (short)1, (short)2);
+        execute("INSERT INTO %s (t, duration_ms, a, b, c) VALUES (?, ?, ?, ?, ?)", Util.dt(1), 1, "2", Short.MAX_VALUE, Short.MIN_VALUE);
 
         assertRows(execute("SELECT * FROM %s"),
-                   row(Util.dt(0), "1", Util.dt(0), (short) 1, (short) 2),
-                   row(Util.dt(1), "2", Util.dt(1), Short.MAX_VALUE, Short.MIN_VALUE));
+                   row(Util.dt(1), 1, "2", Short.MAX_VALUE, Short.MIN_VALUE),
+                   row(Util.dt(0), 1, "1", (short) 1, (short) 2));
 
         assertInvalidMessage("Expected 2 bytes for a smallint (4)",
-                             "INSERT INTO %s (t, a, t_ck, b, c) VALUES (?, ?, ?, ?, ?)", Util.dt(2), "3", Util.dt(2), 1, 2);
+                             "INSERT INTO %s (t, duration_ms, a, b, c) VALUES (?, ?, ?, ?, ?)", Util.dt(2), 1, "3", 1, 2);
         assertInvalidMessage("Expected 2 bytes for a smallint (0)",
-                             "INSERT INTO %s (t, a, t_ck, b, c) VALUES (?, ?, ?, ?, ?)", Util.dt(2), "3",  Util.dt(2), (short) 1, ByteBufferUtil.EMPTY_BYTE_BUFFER);
+                             "INSERT INTO %s (t, duration_ms, a, b, c) VALUES (?, ?, ?, ?, ?)", Util.dt(2), 1, "3", (short) 1, ByteBufferUtil.EMPTY_BYTE_BUFFER);
     }
 }

@@ -328,8 +328,8 @@ public class ThriftConversion
                 newCFMD.comment(cf_def.comment);
             if (cf_def.isSetCompression_options())
                 newCFMD.compression(compressionParametersFromThrift(cf_def.compression_options));
-            if (cf_def.isSetTime_ordered_ck())
-                newCFMD.timeOrderedCK(cf_def.time_ordered_ck);
+            if (cf_def.isSetTime_ordered_key())
+                newCFMD.timeOrderedKey(cf_def.time_ordered_key);
 
             return newCFMD;
         }
@@ -449,8 +449,8 @@ public class ThriftConversion
             cf_def.setMax_index_interval(Math.max(cf_def.min_index_interval, TableParams.DEFAULT_MAX_INDEX_INTERVAL));
         }
 
-        if(!cf_def.isSetTime_ordered_ck()) {
-            cf_def.setTime_ordered_ck(TableParams.DEFAULT_TIME_ORDERED_CK);
+        if(!cf_def.isSetTime_ordered_key()) {
+            cf_def.setTime_ordered_key(TableParams.DEFAULT_TIME_ORDERED_KEY);
         }
     }
 
@@ -493,7 +493,7 @@ public class ThriftConversion
         def.setDefault_time_to_live(cfm.params.defaultTimeToLive);
         def.setSpeculative_retry(cfm.params.speculativeRetry.toString());
         def.setTriggers(triggerDefinitionsToThrift(cfm.getTriggers()));
-        def.setTime_ordered_ck(cfm.params.timeOrderedCK);
+        def.setTime_ordered_key(cfm.params.timeOrderedKey);
 
         return def;
     }

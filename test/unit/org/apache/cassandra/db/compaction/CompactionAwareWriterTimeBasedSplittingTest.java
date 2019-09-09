@@ -23,7 +23,8 @@ import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.compaction.writers.*;
+import org.apache.cassandra.db.compaction.writers.CompactionAwareWriter;
+import org.apache.cassandra.db.compaction.writers.TimeBasedSplittingCompactionWriter;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.utils.FBUtilities;
@@ -48,7 +49,7 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
     {
         // Disabling durable write since we don't care
         schemaChange("CREATE KEYSPACE IF NOT EXISTS " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'} AND durable_writes=false");
-        schemaChange(String.format("CREATE TABLE %s.%s (k TIMESTAMP, name TEXT, k_ck TIMESTAMP, t int, v blob, PRIMARY KEY ((k, name), k_ck, t)) \n" +
+        schemaChange(String.format("CREATE TABLE %s.%s (k TIMESTAMP, duration_ms INT, name TEXT, t int, v blob, PRIMARY KEY ((k, duration_ms, name), t)) \n" +
                 TOKCSUtil.getCQLFramgentForTOKCS("1024,50", 0), KEYSPACE, TABLE));
     }
 
@@ -72,9 +73,7 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
         populate(rowCount);
         LifecycleTransaction txn = cfs.getTracker().tryModify(cfs.getLiveSSTables(), OperationType.COMPACTION);
         long beforeSize = txn.originals().iterator().next().onDiskLength();
-        CompactionAwareWriter writer =
-                new TimeBasedSplittingCompactionWriter(cfs, cfs.getDirectories(), txn, txn.originals(), false, cfs.metadata.partitionKeyColumns().size() > 1,
-                        60, 0, rowCount / 60 + 1, 0);
+        CompactionAwareWriter writer = new TimeBasedSplittingCompactionWriter(cfs, cfs.getDirectories(), txn, txn.originals(), false, 60, 0, rowCount / 60 + 1, 0);
 
         int rows = compact(cfs, txn, writer);
         long expectedSize = beforeSize * 60 / rowCount;
@@ -82,14 +81,15 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
 
         Collections.sort(sortedSSTables, (o1, o2) -> Longs.compare(o2.onDiskLength(), o1.onDiskLength()));
 
-        for(int i = 0; i < sortedSSTables.size() - 1; ++i) {
+        for (int i = 0; i < sortedSSTables.size() - 1; ++i)
+        {
             // allow 1% diff in estimated vs actual size
-            Assert.assertEquals((double)expectedSize, sortedSSTables.get(i).onDiskLength(), expectedSize / 100.0);
+            Assert.assertEquals((double) expectedSize, sortedSSTables.get(i).onDiskLength(), expectedSize / 100.0);
         }
 
         long lastFileExpectedSize = beforeSize * (rowCount % 60) / rowCount;
         // allow 10% diff in estimated vs actual size
-        Assert.assertEquals((double)lastFileExpectedSize, sortedSSTables.get(sortedSSTables.size() - 1).onDiskLength(), lastFileExpectedSize / 10.0);
+        Assert.assertEquals((double) lastFileExpectedSize, sortedSSTables.get(sortedSSTables.size() - 1).onDiskLength(), lastFileExpectedSize / 10.0);
 
         Assert.assertEquals(rowCount, rows);
         validateData(cfs, rowCount);
@@ -108,7 +108,9 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
             while (ci.hasNext())
             {
                 if (writer.append(ci.next()))
+                {
                     rowsWritten++;
+                }
             }
         }
         writer.finish();
@@ -117,7 +119,7 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
 
     private void populate(int count) throws Throwable
     {
-        byte [] payload = new byte[5000];
+        byte[] payload = new byte[5000];
         new Random(42).nextBytes(payload);
         ByteBuffer b = ByteBuffer.wrap(payload);
 
@@ -126,7 +128,7 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
             for (int j = 0; j < ROW_PER_PARTITION; j++)
             {
                 Date key = Util.dt(i);
-                execute(String.format("INSERT INTO %s.%s(k, name, k_ck, t, v) VALUES (?, ?, ?, ?, ?)", KEYSPACE, TABLE), key, "name", key, j, b);
+                execute(String.format("INSERT INTO %s.%s(k, duration_ms, name, t, v) VALUES (?, ?, ?, ?, ?)", KEYSPACE, TABLE), key, 1000, "name", j, b);
             }
         }
 
@@ -142,9 +144,11 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
             Date key = Util.dt(i);
             Object[][] expected = new Object[ROW_PER_PARTITION][];
             for (int j = 0; j < ROW_PER_PARTITION; j++)
-                expected[j] = row(key, "name", key, j);
+            {
+                expected[j] = row(key, 1000, "name", j);
+            }
 
-            assertRows(execute(String.format("SELECT k, name, k_ck, t FROM %s.%s WHERE k = ? and name = ?", KEYSPACE, TABLE), key, "name"), expected);
+            assertRows(execute(String.format("SELECT k, duration_ms, name, t FROM %s.%s WHERE k = ? and duration_ms = ? and name = ?", KEYSPACE, TABLE), key, 1000, "name"), expected);
         }
     }
 }

@@ -130,15 +130,16 @@ public abstract class DecoratedKey implements PartitionPosition, FilterKey
         return token;
     }
 
-    public long getFirstKeyAsLong()
+    public TimeWindow interpretTimeBucket()
     {
         ByteBuffer buffer = getKey();
-        // The key is encoded: 2 byte encoding the length of data (8 in this case) and a long after that
-        return buffer.getLong(buffer.position() + 2);
+        return interpretTimeBucket(buffer);
     }
 
-    public long getKeyAsLong() {
-        return getKey().getLong(0);
+    public static TimeWindow interpretTimeBucket(ByteBuffer buffer)
+    {
+        // The key is encoded: 2 byte encoding the length of data (12 in this case), a long after that and a int after that
+        return new TimeWindow(buffer.getLong(buffer.position() + 2), buffer.getInt(buffer.position() + 10));
     }
 
     public abstract ByteBuffer getKey();
@@ -147,5 +148,16 @@ public abstract class DecoratedKey implements PartitionPosition, FilterKey
     {
         ByteBuffer key = getKey();
         MurmurHash.hash3_x64_128(key, key.position(), key.remaining(), 0, dest);
+    }
+
+    public static class TimeWindow {
+        public final long ts;
+        public final int durationMs;
+
+        public TimeWindow(long ts, int durationMs)
+        {
+            this.ts = ts;
+            this.durationMs = durationMs;
+        }
     }
 }

@@ -737,8 +737,7 @@ public class SchemaLoader
             CFMetaData.Builder builder;
             builder = CFMetaData.Builder.create(ksName, cfName)
                     .addPartitionKey("key", TimestampType.instance)
-                    .addClusteringColumn("key_ck", TimestampType.instance)
-                    .addRegularColumn("val", valType);
+                    .addPartitionKey("duration_ms", Int32Type.instance);
 
             if(clusteringType != null)
                 builder = builder.addClusteringColumn("name", clusteringType);
@@ -748,7 +747,7 @@ public class SchemaLoader
 
             return builder.build()
                     .compression(getCompressionParameters())
-                    .timeOrderedCK(true);
+                    .timeOrderedKey(true);
         }
     }
 

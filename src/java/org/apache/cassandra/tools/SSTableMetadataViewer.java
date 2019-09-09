@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.apache.cassandra.config.Config;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -129,8 +131,8 @@ public class SSTableMetadataViewer
                             minValues[i] = clusteringTypes.get(i).getString(minClusteringValues.get(i));
                             maxValues[i] = clusteringTypes.get(i).getString(maxClusteringValues.get(i));
                         }
-                        out.printf("minClustringValues: %s%n", Arrays.toString(minValues));
-                        out.printf("maxClustringValues: %s%n", Arrays.toString(maxValues));
+                        out.printf("minClusteringValues: %s%n", Arrays.toString(minValues));
+                        out.printf("maxClusteringValues: %s%n", Arrays.toString(maxValues));
                     }
                     out.printf("Estimated droppable tombstones: %s%n", stats.getEstimatedDroppableTombstoneRatio((int) (System.currentTimeMillis() / 1000) - gcgs));
                     out.printf("SSTable Level: %d%n", stats.sstableLevel);
@@ -138,6 +140,10 @@ public class SSTableMetadataViewer
                     out.printf("Replay positions covered: %s%n", stats.commitLogIntervals);
                     out.printf("totalColumnsSet: %s%n", stats.totalColumnsSet);
                     out.printf("totalRows: %s%n", stats.totalRows);
+                    out.printf("keyRange: (%s,%s)%n", stats.minKey, stats.maxKey);
+                    out.printf("partitionTombstones: %s%n", stats.partitionTombstones);
+                    out.printf("rowTombstones: %s%n", stats.rowTombstones);
+                    out.printf("rangeTombstones: %s%n", stats.rangeTombstones);
                     out.println("Estimated tombstone drop times:");
 
                     for (Map.Entry<Number, long[]> entry : stats.estimatedTombstoneDropTime.getAsMap().entrySet())

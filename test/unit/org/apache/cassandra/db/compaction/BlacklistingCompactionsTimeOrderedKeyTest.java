@@ -34,7 +34,6 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.schema.CompactionParams;
 import org.apache.cassandra.schema.KeyspaceParams;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -79,7 +78,8 @@ public class BlacklistingCompactionsTimeOrderedKeyTest
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     KeyspaceParams.simple(1),
                                     makeTable(STANDARD_TOKCS)
-                                            .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getDefaultTOKCSOptions())));
+                                            .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getDefaultTOKCSOptions()))
+                                            .timeOrderedKey(true));
 
         maxValueSize = DatabaseDescriptor.getMaxValueSize();
         DatabaseDescriptor.setMaxValueSize(1024 * 1024);
@@ -136,17 +136,16 @@ public class BlacklistingCompactionsTimeOrderedKeyTest
         long maxTimestampExpected = Long.MIN_VALUE;
         Set<DecoratedKey> inserted = new HashSet<>();
 
-        for (int j = 0; j < SSTABLES; j++)
+        for (long j = 0; j < SSTABLES; j++)
         {
-            for (int i = 0; i < ROWS_PER_SSTABLE; i++)
+            for (long i = 0; i < ROWS_PER_SSTABLE; i++)
             {
                 long timestamp = j * ROWS_PER_SSTABLE + i;
                 Date key = Util.dt(timestamp);
-                DecoratedKey dk = Util.dk(ByteBufferUtil.bytes(key.getTime()));
-                new RowUpdateBuilder(cfs.metadata, timestamp, dk.getKey())
-                        .clustering(key, Long.valueOf(i))
-                        .add("val", Long.valueOf(i))
-                        .add("val0", Long.valueOf(i))
+                DecoratedKey dk = Util.dk(key.getTime(), 1000);
+                new RowUpdateBuilder(cfs.metadata, timestamp, dk)
+                        .clustering(i)
+                        .add("val0", i)
                         .build()
                         .applyUnsafe();
                 maxTimestampExpected = Math.max(timestamp, maxTimestampExpected);

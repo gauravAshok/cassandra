@@ -46,7 +46,7 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.TimeOrderedKeyCFMD.standardCFMD(KEYSPACE1, TOKCS_TABLE)
-                                                .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getDefaultTOKCSOptions())));
+                                                .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getTOKCSOptions("0,0", "0,0", 1))));
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(TOKCS_TABLE).disableAutoCompaction();
     }
 
@@ -56,7 +56,7 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(TOKCS_TABLE).truncateBlocking();
     }
 
-    @Test(timeout=90000)
+    @Test(timeout=9000000)
     public void testGetNextBackgroundTaskDoesNotBlockTOKCSTombstoneRange()
     {
         testGetNextBackgroundTaskDoesNotBlock(TOKCS_TABLE, true);

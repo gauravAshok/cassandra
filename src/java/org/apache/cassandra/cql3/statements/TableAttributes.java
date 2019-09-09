@@ -157,8 +157,8 @@ public final class TableAttributes extends PropertyDefinitions
         if (hasOption(Option.CDC))
             builder.cdc(getBoolean(Option.CDC.toString(), false));
 
-        if (hasOption(Option.TIME_ORDERED_CK))
-            builder.timeOrderedCK(getBoolean(Option.TIME_ORDERED_CK.toString(), false));
+        if (hasOption(Option.TIME_ORDERED_KEY))
+            builder.timeOrderedKey(getBoolean(Option.TIME_ORDERED_KEY.toString(), false));
 
         return builder.build();
     }

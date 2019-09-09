@@ -167,9 +167,9 @@ public final class CFMetaData
         return this;
     }
 
-    public CFMetaData timeOrderedCK(boolean prop)
+    public CFMetaData timeOrderedKey(boolean prop)
     {
-        params = TableParams.builder(params).timeOrderedCK(prop).build();
+        params = TableParams.builder(params).timeOrderedKey(prop).build();
         return this;
     }
 

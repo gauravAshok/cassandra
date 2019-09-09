@@ -22,9 +22,16 @@ import org.apache.cassandra.db.rows.Cell;
 
 public interface PartitionStatisticsCollector
 {
+    public enum DeletionFor {
+        PARTITION,
+        ROW,
+        RANGE
+    }
+
     public void update(LivenessInfo info);
     public void update(DeletionTime deletionTime);
     public void update(Cell cell);
     public void updateColumnSetPerRow(long columnSetInRow);
     public void updateHasLegacyCounterShards(boolean hasLegacyCounterShards);
+    default public void updateDeletionFor(DeletionFor deletionFor) { }
 }

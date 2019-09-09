@@ -375,7 +375,7 @@ public class TimeWindowCompactionStrategy extends AbstractCompactionStrategy
     public static Map<String, String> validateOptions(Map<String, String> options) throws ConfigurationException
     {
         Map<String, String> uncheckedOptions = AbstractCompactionStrategy.validateOptions(options);
-        uncheckedOptions = TimeWindowCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
+        uncheckedOptions = TimeOrderedKeyCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
 
         uncheckedOptions.remove(CompactionParams.Option.MIN_THRESHOLD.toString());
         uncheckedOptions.remove(CompactionParams.Option.MAX_THRESHOLD.toString());
@@ -385,7 +385,7 @@ public class TimeWindowCompactionStrategy extends AbstractCompactionStrategy
 
     public String toString()
     {
-        return String.format("TimeWindowCompactionStrategy[%s/%s]",
+        return String.format("TimeOrderedKeyCompactionStrategy[%s/%s]",
                 cfs.getMinimumCompactionThreshold(),
                 cfs.getMaximumCompactionThreshold());
     }

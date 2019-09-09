@@ -88,19 +88,19 @@ public class CompactionsCQLTest extends CQLTester
     @Test
     public void testTriggerMinorCompactionTOKCSCompactTombstones() throws Throwable
     {
-        createTable("CREATE TABLE %s (id TIMESTAMP, id_ck TIMESTAMP, PRIMARY KEY(id, id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0));
+        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0));
         assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
-        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(1), Util.dt(1));
-        execute("delete from %s where id = ? and id_ck = ?", Util.dt(1), Util.dt(1));
+        execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(1), 1000, Util.dt(1));
+        execute("delete from %s where id = ? and duration_ms = ? and id_ck = ?", Util.dt(1), 1000, Util.dt(1));
         flush();
-        execute("delete from %s where id = ? and id_ck = ?", Util.dt(1), Util.dt(1));
+        execute("delete from %s where id = ? and duration_ms = ? and id_ck = ?", Util.dt(1), 1000, Util.dt(1));
         flush();
 
         // Compaction strategy will actually ignore the 2 sstables for the remaining of the minute.
         waitForMinor(KEYSPACE, currentTable(), Util.timeUptoNearestSeconds(60) * 1000, false);
 
         // We are forcing a flush so that compaction controller can look for compaction again.
-        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(2), Util.dt(2));
+        execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(2), 1000, Util.dt(2));
         flush();
         // now we expect a compaction.
         waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);
@@ -111,17 +111,17 @@ public class CompactionsCQLTest extends CQLTester
     @Test
     public void testTriggerMinorCompactionTOKCSCompactTombstoneWithData() throws Throwable
     {
-        createTable("CREATE TABLE %s (id TIMESTAMP, id_ck TIMESTAMP, PRIMARY KEY(id, id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0));
+        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0));
         assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
-        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(1), Util.dt(1));
+        execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(1), 1000, Util.dt(1));
         flush();
-        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(2), Util.dt(2));
-        execute("delete from %s where id = ? and id_ck = ?", Util.dt(1), Util.dt(1));
+        execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(2), 1000, Util.dt(2));
+        execute("delete from %s where id = ? and duration_ms = ? and id_ck = ?", Util.dt(1), 1000, Util.dt(1));
         flush();
 
         waitForMinor(KEYSPACE, currentTable(), Util.timeUptoNearestSeconds(60) * 1000, false);
 
-        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(3), Util.dt(3));
+        execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(3), 1000, Util.dt(3));
         flush();
 
         waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);
@@ -132,17 +132,17 @@ public class CompactionsCQLTest extends CQLTester
     @Test
     public void testTriggerMinorCompactionTOKCSCompactTombstoneSplitting() throws Throwable
     {
-        createTable("CREATE TABLE %s (id TIMESTAMP, id_ck TIMESTAMP, PRIMARY KEY(id, id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 120));
+        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 120));
         assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
-        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(121), Util.dt(121));
-        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(122), Util.dt(122));
-        execute("delete from %s where id = ? and id_ck = ?", Util.dt(0), Util.dt(0));
-        execute("delete from %s where id = ? and id_ck = ?", Util.dt(61), Util.dt(61));
+        execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(121), 1000, Util.dt(121));
+        execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(122), 1000, Util.dt(122));
+        execute("delete from %s where id = ? and duration_ms = ? and id_ck = ?", Util.dt(0), 1000, Util.dt(0));
+        execute("delete from %s where id = ? and duration_ms = ? and id_ck = ?", Util.dt(61), 1000, Util.dt(61));
         flush();
 
         waitForMinor(KEYSPACE, currentTable(), Util.timeUptoNearestSeconds(60) * 1000, false);
 
-        execute("insert into %s (id, id_ck) values (?, ?)", Util.dt(123), Util.dt(123));
+        execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(123), 1000, Util.dt(123));
         flush();
 
         waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);

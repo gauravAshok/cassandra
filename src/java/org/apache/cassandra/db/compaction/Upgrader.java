@@ -68,7 +68,7 @@ public class Upgrader
 
     private SSTableWriter createCompactionWriter(long repairedAt)
     {
-        MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.getComparator());
+        MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.getComparator(), cfs.timeOrderedKey());
         sstableMetadataCollector.sstableLevel(sstable.getSSTableLevel());
         return SSTableWriter.create(Descriptor.fromFilename(cfs.getSSTablePath(directory)),
                                     estimatedRows,

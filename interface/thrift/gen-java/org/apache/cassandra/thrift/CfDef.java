@@ -85,7 +85,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
   private static final org.apache.thrift.protocol.TField CELLS_PER_ROW_TO_CACHE_FIELD_DESC = new org.apache.thrift.protocol.TField("cells_per_row_to_cache", org.apache.thrift.protocol.TType.STRING, (short)44);
   private static final org.apache.thrift.protocol.TField MIN_INDEX_INTERVAL_FIELD_DESC = new org.apache.thrift.protocol.TField("min_index_interval", org.apache.thrift.protocol.TType.I32, (short)45);
   private static final org.apache.thrift.protocol.TField MAX_INDEX_INTERVAL_FIELD_DESC = new org.apache.thrift.protocol.TField("max_index_interval", org.apache.thrift.protocol.TType.I32, (short)46);
-  private static final org.apache.thrift.protocol.TField TIME_ORDERED_CK_FIELD_DESC = new org.apache.thrift.protocol.TField("time_ordered_ck", org.apache.thrift.protocol.TType.BOOL, (short)51);
+  private static final org.apache.thrift.protocol.TField TIME_ORDERED_KEY_FIELD_DESC = new org.apache.thrift.protocol.TField("time_ordered_key", org.apache.thrift.protocol.TType.BOOL, (short)51);
   private static final org.apache.thrift.protocol.TField ROW_CACHE_SIZE_FIELD_DESC = new org.apache.thrift.protocol.TField("row_cache_size", org.apache.thrift.protocol.TType.DOUBLE, (short)9);
   private static final org.apache.thrift.protocol.TField KEY_CACHE_SIZE_FIELD_DESC = new org.apache.thrift.protocol.TField("key_cache_size", org.apache.thrift.protocol.TType.DOUBLE, (short)11);
   private static final org.apache.thrift.protocol.TField ROW_CACHE_SAVE_PERIOD_IN_SECONDS_FIELD_DESC = new org.apache.thrift.protocol.TField("row_cache_save_period_in_seconds", org.apache.thrift.protocol.TType.I32, (short)19);
@@ -134,7 +134,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
   public String cells_per_row_to_cache; // optional
   public int min_index_interval; // optional
   public int max_index_interval; // optional
-  public boolean time_ordered_ck; // optional
+  public boolean time_ordered_key; // optional
   /**
    * @deprecated
    */
@@ -218,7 +218,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     CELLS_PER_ROW_TO_CACHE((short)44, "cells_per_row_to_cache"),
     MIN_INDEX_INTERVAL((short)45, "min_index_interval"),
     MAX_INDEX_INTERVAL((short)46, "max_index_interval"),
-    TIME_ORDERED_CK((short)51, "time_ordered_ck"),
+    TIME_ORDERED_KEY((short)51, "time_ordered_key"),
     /**
      * @deprecated
      */
@@ -341,8 +341,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
           return MIN_INDEX_INTERVAL;
         case 46: // MAX_INDEX_INTERVAL
           return MAX_INDEX_INTERVAL;
-        case 51: // TIME_ORDERED_CK
-          return TIME_ORDERED_CK;
+        case 51: // TIME_ORDERED_KEY
+          return TIME_ORDERED_KEY;
         case 9: // ROW_CACHE_SIZE
           return ROW_CACHE_SIZE;
         case 11: // KEY_CACHE_SIZE
@@ -420,7 +420,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
   private static final int __DEFAULT_TIME_TO_LIVE_ISSET_ID = 8;
   private static final int __MIN_INDEX_INTERVAL_ISSET_ID = 9;
   private static final int __MAX_INDEX_INTERVAL_ISSET_ID = 10;
-  private static final int __TIME_ORDERED_CK_ISSET_ID = 11;
+  private static final int __TIME_ORDERED_KEY_ISSET_ID = 11;
   private static final int __ROW_CACHE_SIZE_ISSET_ID = 12;
   private static final int __KEY_CACHE_SIZE_ISSET_ID = 13;
   private static final int __ROW_CACHE_SAVE_PERIOD_IN_SECONDS_ISSET_ID = 14;
@@ -434,7 +434,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
   private static final int __POPULATE_IO_CACHE_ON_FLUSH_ISSET_ID = 22;
   private static final int __INDEX_INTERVAL_ISSET_ID = 23;
   private int __isset_bitfield = 0;
-  private _Fields optionals[] = {_Fields.COLUMN_TYPE,_Fields.COMPARATOR_TYPE,_Fields.SUBCOMPARATOR_TYPE,_Fields.COMMENT,_Fields.READ_REPAIR_CHANCE,_Fields.COLUMN_METADATA,_Fields.GC_GRACE_SECONDS,_Fields.DEFAULT_VALIDATION_CLASS,_Fields.ID,_Fields.MIN_COMPACTION_THRESHOLD,_Fields.MAX_COMPACTION_THRESHOLD,_Fields.KEY_VALIDATION_CLASS,_Fields.KEY_ALIAS,_Fields.COMPACTION_STRATEGY,_Fields.COMPACTION_STRATEGY_OPTIONS,_Fields.COMPRESSION_OPTIONS,_Fields.BLOOM_FILTER_FP_CHANCE,_Fields.CACHING,_Fields.DCLOCAL_READ_REPAIR_CHANCE,_Fields.MEMTABLE_FLUSH_PERIOD_IN_MS,_Fields.DEFAULT_TIME_TO_LIVE,_Fields.SPECULATIVE_RETRY,_Fields.TRIGGERS,_Fields.CELLS_PER_ROW_TO_CACHE,_Fields.MIN_INDEX_INTERVAL,_Fields.MAX_INDEX_INTERVAL,_Fields.TIME_ORDERED_CK,_Fields.ROW_CACHE_SIZE,_Fields.KEY_CACHE_SIZE,_Fields.ROW_CACHE_SAVE_PERIOD_IN_SECONDS,_Fields.KEY_CACHE_SAVE_PERIOD_IN_SECONDS,_Fields.MEMTABLE_FLUSH_AFTER_MINS,_Fields.MEMTABLE_THROUGHPUT_IN_MB,_Fields.MEMTABLE_OPERATIONS_IN_MILLIONS,_Fields.REPLICATE_ON_WRITE,_Fields.MERGE_SHARDS_CHANCE,_Fields.ROW_CACHE_PROVIDER,_Fields.ROW_CACHE_KEYS_TO_SAVE,_Fields.POPULATE_IO_CACHE_ON_FLUSH,_Fields.INDEX_INTERVAL};
+  private _Fields optionals[] = {_Fields.COLUMN_TYPE,_Fields.COMPARATOR_TYPE,_Fields.SUBCOMPARATOR_TYPE,_Fields.COMMENT,_Fields.READ_REPAIR_CHANCE,_Fields.COLUMN_METADATA,_Fields.GC_GRACE_SECONDS,_Fields.DEFAULT_VALIDATION_CLASS,_Fields.ID,_Fields.MIN_COMPACTION_THRESHOLD,_Fields.MAX_COMPACTION_THRESHOLD,_Fields.KEY_VALIDATION_CLASS,_Fields.KEY_ALIAS,_Fields.COMPACTION_STRATEGY,_Fields.COMPACTION_STRATEGY_OPTIONS,_Fields.COMPRESSION_OPTIONS,_Fields.BLOOM_FILTER_FP_CHANCE,_Fields.CACHING,_Fields.DCLOCAL_READ_REPAIR_CHANCE,_Fields.MEMTABLE_FLUSH_PERIOD_IN_MS,_Fields.DEFAULT_TIME_TO_LIVE,_Fields.SPECULATIVE_RETRY,_Fields.TRIGGERS,_Fields.CELLS_PER_ROW_TO_CACHE,_Fields.MIN_INDEX_INTERVAL,_Fields.MAX_INDEX_INTERVAL,_Fields.TIME_ORDERED_KEY,_Fields.ROW_CACHE_SIZE,_Fields.KEY_CACHE_SIZE,_Fields.ROW_CACHE_SAVE_PERIOD_IN_SECONDS,_Fields.KEY_CACHE_SAVE_PERIOD_IN_SECONDS,_Fields.MEMTABLE_FLUSH_AFTER_MINS,_Fields.MEMTABLE_THROUGHPUT_IN_MB,_Fields.MEMTABLE_OPERATIONS_IN_MILLIONS,_Fields.REPLICATE_ON_WRITE,_Fields.MERGE_SHARDS_CHANCE,_Fields.ROW_CACHE_PROVIDER,_Fields.ROW_CACHE_KEYS_TO_SAVE,_Fields.POPULATE_IO_CACHE_ON_FLUSH,_Fields.INDEX_INTERVAL};
   public static final Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> metaDataMap;
   static {
     Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> tmpMap = new EnumMap<_Fields, org.apache.thrift.meta_data.FieldMetaData>(_Fields.class);
@@ -500,7 +500,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.I32)));
     tmpMap.put(_Fields.MAX_INDEX_INTERVAL, new org.apache.thrift.meta_data.FieldMetaData("max_index_interval", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
         new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.I32)));
-    tmpMap.put(_Fields.TIME_ORDERED_CK, new org.apache.thrift.meta_data.FieldMetaData("time_ordered_ck", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
+    tmpMap.put(_Fields.TIME_ORDERED_KEY, new org.apache.thrift.meta_data.FieldMetaData("time_ordered_key", org.apache.thrift.TFieldRequirementType.OPTIONAL,
         new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.BOOL)));
     tmpMap.put(_Fields.ROW_CACHE_SIZE, new org.apache.thrift.meta_data.FieldMetaData("row_cache_size", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
         new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.DOUBLE)));
@@ -545,7 +545,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
 
     this.cells_per_row_to_cache = "100";
 
-    this.time_ordered_ck = false;
+    this.time_ordered_key = false;
 
   }
 
@@ -636,7 +636,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     }
     this.min_index_interval = other.min_index_interval;
     this.max_index_interval = other.max_index_interval;
-    this.time_ordered_ck = other.time_ordered_ck;
+    this.time_ordered_key = other.time_ordered_key;
     this.row_cache_size = other.row_cache_size;
     this.key_cache_size = other.key_cache_size;
     this.row_cache_save_period_in_seconds = other.row_cache_save_period_in_seconds;
@@ -704,7 +704,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     this.min_index_interval = 0;
     setMax_index_intervalIsSet(false);
     this.max_index_interval = 0;
-    this.time_ordered_ck = false;
+    this.time_ordered_key = false;
 
     setRow_cache_sizeIsSet(false);
     this.row_cache_size = 0.0;
@@ -1456,27 +1456,27 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     __isset_bitfield = EncodingUtils.setBit(__isset_bitfield, __MAX_INDEX_INTERVAL_ISSET_ID, value);
   }
 
-  public boolean isTime_ordered_ck() {
-    return this.time_ordered_ck;
+  public boolean isTime_ordered_key() {
+    return this.time_ordered_key;
   }
 
-  public CfDef setTime_ordered_ck(boolean time_ordered_ck) {
-    this.time_ordered_ck = time_ordered_ck;
-    setTime_ordered_ckIsSet(true);
+  public CfDef setTime_ordered_key(boolean time_ordered_key) {
+    this.time_ordered_key = time_ordered_key;
+    setTime_ordered_keyIsSet(true);
     return this;
   }
 
-  public void unsetTime_ordered_ck() {
-    __isset_bitfield = EncodingUtils.clearBit(__isset_bitfield, __TIME_ORDERED_CK_ISSET_ID);
+  public void unsetTime_ordered_key() {
+    __isset_bitfield = EncodingUtils.clearBit(__isset_bitfield, __TIME_ORDERED_KEY_ISSET_ID);
   }
 
-  /** Returns true if field time_ordered_ck is set (has been assigned a value) and false otherwise */
-  public boolean isSetTime_ordered_ck() {
-    return EncodingUtils.testBit(__isset_bitfield, __TIME_ORDERED_CK_ISSET_ID);
+  /** Returns true if field time_ordered_key is set (has been assigned a value) and false otherwise */
+  public boolean isSetTime_ordered_key() {
+    return EncodingUtils.testBit(__isset_bitfield, __TIME_ORDERED_KEY_ISSET_ID);
   }
 
-  public void setTime_ordered_ckIsSet(boolean value) {
-    __isset_bitfield = EncodingUtils.setBit(__isset_bitfield, __TIME_ORDERED_CK_ISSET_ID, value);
+  public void setTime_ordered_keyIsSet(boolean value) {
+    __isset_bitfield = EncodingUtils.setBit(__isset_bitfield, __TIME_ORDERED_KEY_ISSET_ID, value);
   }
 
   /**
@@ -2083,11 +2083,11 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       }
       break;
 
-    case TIME_ORDERED_CK:
+    case TIME_ORDERED_KEY:
       if (value == null) {
-        unsetTime_ordered_ck();
+        unsetTime_ordered_key();
       } else {
-        setTime_ordered_ck((Boolean)value);
+        setTime_ordered_key((Boolean)value);
       }
       break;
 
@@ -2284,8 +2284,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     case MAX_INDEX_INTERVAL:
       return Integer.valueOf(getMax_index_interval());
 
-    case TIME_ORDERED_CK:
-      return Boolean.valueOf(isTime_ordered_ck());
+    case TIME_ORDERED_KEY:
+      return Boolean.valueOf(isTime_ordered_key());
 
     case ROW_CACHE_SIZE:
       return Double.valueOf(getRow_cache_size());
@@ -2393,8 +2393,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       return isSetMin_index_interval();
     case MAX_INDEX_INTERVAL:
       return isSetMax_index_interval();
-    case TIME_ORDERED_CK:
-      return isSetTime_ordered_ck();
+    case TIME_ORDERED_KEY:
+      return isSetTime_ordered_key();
     case ROW_CACHE_SIZE:
       return isSetRow_cache_size();
     case KEY_CACHE_SIZE:
@@ -2690,12 +2690,12 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         return false;
     }
 
-    boolean this_present_time_ordered_ck = true && this.isSetTime_ordered_ck();
-    boolean that_present_time_ordered_ck = true && that.isSetTime_ordered_ck();
-    if (this_present_time_ordered_ck || that_present_time_ordered_ck) {
-      if (!(this_present_time_ordered_ck && that_present_time_ordered_ck))
+    boolean this_present_time_ordered_key = true && this.isSetTime_ordered_key();
+    boolean that_present_time_ordered_key = true && that.isSetTime_ordered_key();
+    if (this_present_time_ordered_key || that_present_time_ordered_key) {
+      if (!(this_present_time_ordered_key && that_present_time_ordered_key))
         return false;
-      if (this.time_ordered_ck != that.time_ordered_ck)
+      if (this.time_ordered_key != that.time_ordered_key)
         return false;
     }
 
@@ -2963,10 +2963,10 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     if (present_max_index_interval)
       builder.append(max_index_interval);
 
-    boolean present_time_ordered_ck = true && (isSetTime_ordered_ck());
-    builder.append(present_time_ordered_ck);
-    if (present_time_ordered_ck)
-      builder.append(time_ordered_ck);
+    boolean present_time_ordered_key = true && (isSetTime_ordered_key());
+    builder.append(present_time_ordered_key);
+    if (present_time_ordered_key)
+      builder.append(time_ordered_key);
 
     boolean present_row_cache_size = true && (isSetRow_cache_size());
     builder.append(present_row_cache_size);
@@ -3324,12 +3324,12 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         return lastComparison;
       }
     }
-    lastComparison = Boolean.valueOf(isSetTime_ordered_ck()).compareTo(other.isSetTime_ordered_ck());
+    lastComparison = Boolean.valueOf(isSetTime_ordered_key()).compareTo(other.isSetTime_ordered_key());
     if (lastComparison != 0) {
       return lastComparison;
     }
-    if (isSetTime_ordered_ck()) {
-      lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.time_ordered_ck, other.time_ordered_ck);
+    if (isSetTime_ordered_key()) {
+      lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.time_ordered_key, other.time_ordered_key);
       if (lastComparison != 0) {
         return lastComparison;
       }
@@ -3715,10 +3715,10 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       sb.append(this.max_index_interval);
       first = false;
     }
-    if (isSetTime_ordered_ck()) {
+    if (isSetTime_ordered_key()) {
       if (!first) sb.append(", ");
-      sb.append("time_ordered_ck:");
-      sb.append(this.time_ordered_ck);
+      sb.append("time_ordered_key:");
+      sb.append(this.time_ordered_key);
       first = false;
     }
     if (isSetRow_cache_size()) {
@@ -4124,10 +4124,10 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
               org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
             }
             break;
-          case 51: // TIME_ORDERED_CK
+          case 51: // TIME_ORDERED_KEY
             if (schemeField.type == org.apache.thrift.protocol.TType.BOOL) {
-              struct.time_ordered_ck = iprot.readBool();
-              struct.setTime_ordered_ckIsSet(true);
+              struct.time_ordered_key = iprot.readBool();
+              struct.setTime_ordered_keyIsSet(true);
             } else { 
               org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
             }
@@ -4518,9 +4518,9 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         oprot.writeI32(struct.max_index_interval);
         oprot.writeFieldEnd();
       }
-      if (struct.isSetTime_ordered_ck()) {
-        oprot.writeFieldBegin(TIME_ORDERED_CK_FIELD_DESC);
-        oprot.writeBool(struct.time_ordered_ck);
+      if (struct.isSetTime_ordered_key()) {
+        oprot.writeFieldBegin(TIME_ORDERED_KEY_FIELD_DESC);
+        oprot.writeBool(struct.time_ordered_key);
         oprot.writeFieldEnd();
       }
       oprot.writeFieldStop();
@@ -4621,7 +4621,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       if (struct.isSetMax_index_interval()) {
         optionals.set(25);
       }
-      if (struct.isSetTime_ordered_ck()) {
+      if (struct.isSetTime_ordered_key()) {
         optionals.set(26);
       }
       if (struct.isSetRow_cache_size()) {
@@ -4768,8 +4768,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       if (struct.isSetMax_index_interval()) {
         oprot.writeI32(struct.max_index_interval);
       }
-      if (struct.isSetTime_ordered_ck()) {
-        oprot.writeBool(struct.time_ordered_ck);
+      if (struct.isSetTime_ordered_key()) {
+        oprot.writeBool(struct.time_ordered_key);
       }
       if (struct.isSetRow_cache_size()) {
         oprot.writeDouble(struct.row_cache_size);
@@ -4967,8 +4967,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         struct.setMax_index_intervalIsSet(true);
       }
       if (incoming.get(26)) {
-        struct.time_ordered_ck = iprot.readBool();
-        struct.setTime_ordered_ckIsSet(true);
+        struct.time_ordered_key = iprot.readBool();
+        struct.setTime_ordered_keyIsSet(true);
       }
       if (incoming.get(27)) {
         struct.row_cache_size = iprot.readDouble();

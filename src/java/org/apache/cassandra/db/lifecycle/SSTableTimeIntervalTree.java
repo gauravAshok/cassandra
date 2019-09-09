@@ -22,7 +22,6 @@ import com.google.common.collect.Iterables;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Interval;
 import org.apache.cassandra.utils.IntervalTree;
 
@@ -30,13 +29,11 @@ import java.util.*;
 
 public class SSTableTimeIntervalTree extends IntervalTree<Long, SSTableReader, Interval<Long, SSTableReader>>
 {
-    private static final SSTableTimeIntervalTree EMPTY = new SSTableTimeIntervalTree(null, false);
-    private final boolean multiKeyPartition;
+    private static final SSTableTimeIntervalTree EMPTY = new SSTableTimeIntervalTree(null);
 
-    SSTableTimeIntervalTree(Collection<Interval<Long, SSTableReader>> intervals, boolean multiKeyPartition)
+    SSTableTimeIntervalTree(Collection<Interval<Long, SSTableReader>> intervals)
     {
         super(intervals);
-        this.multiKeyPartition = multiKeyPartition;
     }
 
     public static SSTableTimeIntervalTree empty()
@@ -46,33 +43,32 @@ public class SSTableTimeIntervalTree extends IntervalTree<Long, SSTableReader, I
 
     public static SSTableTimeIntervalTree build(Iterable<SSTableReader> sstables)
     {
-        Iterator<SSTableReader> iterator = sstables.iterator();
-        boolean multiKeyPartition = iterator.hasNext() && iterator.next().metadata.partitionKeyColumns().size() > 1;
-        return new SSTableTimeIntervalTree(buildIntervalsBasedOnClustering(sstables), multiKeyPartition);
+        return new SSTableTimeIntervalTree(buildIntervalsBasedOnKeyRange(sstables));
     }
 
-    public static List<Interval<Long, SSTableReader>> buildIntervalsBasedOnClustering(Iterable<SSTableReader> sstables)
+    public static List<Interval<Long, SSTableReader>> buildIntervalsBasedOnKeyRange(Iterable<SSTableReader> sstables)
     {
         List<Interval<Long, SSTableReader>> intervals = new ArrayList<>(Iterables.size(sstables));
         for (SSTableReader sstable : sstables)
         {
             StatsMetadata metadata = sstable.getSSTableMetadata();
-            Interval<Long, Void> bound = intervalFromClusteringKey(metadata);
+            Interval<Long, Void> bound = intervalFromKeyRange(metadata);
             intervals.add(Interval.create(bound.min, bound.max, sstable));
         }
         return intervals;
     }
 
-    static Interval<Long, Void> intervalFromClusteringKey(StatsMetadata metadata) {
+    static Interval<Long, Void> intervalFromKeyRange(StatsMetadata metadata) {
 
-        long lb = (metadata.minClusteringValues == null || metadata.minClusteringValues.isEmpty()) ? Long.MIN_VALUE : ByteBufferUtil.toLong(metadata.minClusteringValues.get(0));
-        long ub = (metadata.maxClusteringValues == null || metadata.maxClusteringValues.isEmpty()) ? Long.MAX_VALUE: ByteBufferUtil.toLong(metadata.maxClusteringValues.get(0));
+        long lb = metadata.minKey;
+        // maxKey is actually exclusive bound. -1 so that it plays well with interval tree where it expects the upper bound to be inclusive.
+        long ub = metadata.maxKey - 1;
 
         return Interval.create(lb, ub);
     }
 
     public List<SSTableReader> searchByDecoratedKey(DecoratedKey dk) {
-        long key = multiKeyPartition ? dk.getFirstKeyAsLong() : dk.getKeyAsLong();
+        long key = dk.interpretTimeBucket().ts;
         return search(key);
     }
 }
