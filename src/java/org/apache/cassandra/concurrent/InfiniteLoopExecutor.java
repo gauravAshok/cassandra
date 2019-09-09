@@ -76,9 +76,8 @@ public class InfiniteLoopExecutor
         thread.interrupt();
     }
 
-    public boolean awaitTermination(long time, TimeUnit unit) throws InterruptedException
+    public void awaitTermination(long time, TimeUnit unit) throws InterruptedException
     {
         thread.join(unit.toMillis(time));
-        return !thread.isAlive();
     }
 }

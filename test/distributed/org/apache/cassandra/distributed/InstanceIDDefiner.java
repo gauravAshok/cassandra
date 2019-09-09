@@ -16,18 +16,23 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.distributed.api;
+package org.apache.cassandra.distributed;
 
-import org.apache.cassandra.locator.InetAddressAndPort;
+import ch.qos.logback.core.PropertyDefinerBase;
 
 /**
- * A cross-version interface for delivering internode messages via message sinks
+ * Used by logback to find/define property value, see logback-dtest.xml
  */
-public interface IMessage
+public class InstanceIDDefiner extends PropertyDefinerBase
 {
-    int verb();
-    byte[] bytes();
-    int id();
-    int version();
-    InetAddressAndPort from();
+    // Instantiated per classloader, set by Instance
+    public static int instanceId = -1;
+
+    public String getPropertyValue()
+    {
+        if (instanceId == -1)
+            return "<main>";
+        else
+            return "INSTANCE" + instanceId;
+    }
 }

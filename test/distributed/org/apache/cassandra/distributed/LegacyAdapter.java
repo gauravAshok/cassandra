@@ -16,24 +16,27 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.db.lifecycle;
+package org.apache.cassandra.distributed;
 
-import java.util.Collection;
-import java.util.Set;
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.utils.FBUtilities;
 
-import org.apache.cassandra.io.sstable.SSTable;
-import org.apache.cassandra.io.sstable.format.SSTableReader;
-import org.apache.cassandra.utils.concurrent.Transactional;
+import java.net.InetAddress;
 
-public interface ILifecycleTransaction extends Transactional, LifecycleNewTracker
+public class LegacyAdapter
 {
-    void checkpoint();
-    void update(SSTableReader reader, boolean original);
-    void update(Collection<SSTableReader> readers, boolean original);
-    public SSTableReader current(SSTableReader reader);
-    void obsolete(SSTableReader reader);
-    void obsoleteOriginals();
-    Set<SSTableReader> originals();
-    boolean isObsolete(SSTableReader reader);
-    boolean isOffline();
+    private static final InetAddressAndPort broadcastAddressAndPort;
+    static
+    {
+        InetAddress address = FBUtilities.getBroadcastAddress();
+        int port = DatabaseDescriptor.getStoragePort();
+        broadcastAddressAndPort = InetAddressAndPort.getByAddressOverrideDefaults(address, port);
+    }
+
+    public static InetAddressAndPort getBroadcastAddressAndPort()
+    {
+        return broadcastAddressAndPort;
+    }
+
 }

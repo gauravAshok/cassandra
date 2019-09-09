@@ -121,11 +121,6 @@ public class ExpiringMap<K, V>
     public void reset()
     {
         shutdown = false;
-        clear();
-    }
-
-    public void clear()
-    {
         cache.clear();
     }
 

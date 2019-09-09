@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
@@ -122,9 +121,6 @@ public class Config
     public Integer memtable_heap_space_in_mb;
     public Integer memtable_offheap_space_in_mb;
     public Float memtable_cleanup_threshold = null;
-
-    // Limit the maximum depth of repair session merkle trees
-    public volatile int repair_session_max_tree_depth = 18;
 
     public int storage_port = 7000;
     public int ssl_storage_port = 7001;
@@ -267,7 +263,6 @@ public class Config
     public volatile int counter_cache_keys_to_save = Integer.MAX_VALUE;
 
     private static boolean isClientMode = false;
-    private static Supplier<Config> overrideLoadConfig = null;
 
     public Integer file_cache_size_in_mb;
 
@@ -348,8 +343,6 @@ public class Config
 
     public boolean enable_materialized_views = true;
 
-    public boolean enable_sasi_indexes = true;
-
     /**
      * Optionally disable asynchronous UDF execution.
      * Disabling asynchronous UDF execution also implicitly disables the security-manager!
@@ -403,16 +396,6 @@ public class Config
     public static void setClientMode(boolean clientMode)
     {
         isClientMode = clientMode;
-    }
-
-    public static Supplier<Config> getOverrideLoadConfig()
-    {
-        return overrideLoadConfig;
-    }
-
-    public static void setOverrideLoadConfig(Supplier<Config> loadConfig)
-    {
-        overrideLoadConfig = loadConfig;
     }
 
     public enum CommitLogSync

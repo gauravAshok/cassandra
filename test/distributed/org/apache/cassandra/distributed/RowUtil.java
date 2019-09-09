@@ -16,26 +16,32 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.db;
+package org.apache.cassandra.distributed;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.cql3.ColumnSpecification;
+import org.apache.cassandra.transport.messages.ResultMessage;
 
-import static org.apache.cassandra.db.LegacyLayout.stringify;
-
-/**
- * Exception thrown when we attempt to decode a legacy cellname
- * and the column name component refers to a primary key column.
- */
-public class IllegalLegacyColumnException extends Exception
+public class RowUtil
 {
-    public final ByteBuffer columnName;
-
-    public IllegalLegacyColumnException(CFMetaData metaData, ByteBuffer columnName)
+    public static Object[][] toObjects(ResultMessage.Rows rows)
     {
-        super(String.format("Illegal cell name for CQL3 table %s.%s. %s is defined as a primary key column",
-                            metaData.ksName, metaData.cfName, stringify(columnName)));
-        this.columnName = columnName;
+        Object[][] result = new Object[rows.result.rows.size()][];
+        List<ColumnSpecification> specs = rows.result.metadata.names;
+        for (int i = 0; i < rows.result.rows.size(); i++)
+        {
+            List<ByteBuffer> row = rows.result.rows.get(i);
+            result[i] = new Object[row.size()];
+            for (int j = 0; j < row.size(); j++)
+            {
+                ByteBuffer bb = row.get(j);
+
+                if (bb != null)
+                    result[i][j] = specs.get(j).type.getSerializer().deserialize(bb);
+            }
+        }
+        return result;
     }
 }

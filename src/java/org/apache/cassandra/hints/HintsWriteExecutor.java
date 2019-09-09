@@ -22,14 +22,9 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.concurrent.*;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.util.FileUtils;
 
 /**
  * A single threaded executor that exclusively writes all the hints and otherwise manipulate the writers.
@@ -40,8 +35,6 @@ import org.apache.cassandra.io.util.FileUtils;
  */
 final class HintsWriteExecutor
 {
-    private static final Logger logger = LoggerFactory.getLogger(HintsWriteExecutor.class);
-
     static final int WRITE_BUFFER_SIZE = 256 << 10;
 
     private final HintsCatalog catalog;
@@ -158,15 +151,7 @@ final class HintsWriteExecutor
         {
             HintsBuffer buffer = bufferPool.currentBuffer();
             buffer.waitForModifications();
-            try
-            {
-                flush(buffer);
-            }
-            catch(FSError e)
-            {
-                logger.error("Unable to flush hint buffer: {}", e.getLocalizedMessage(), e);
-                FileUtils.handleFSErrorAndPropagate(e);
-            }
+            flush(buffer);
         }
     }
 

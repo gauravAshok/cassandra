@@ -127,9 +127,6 @@ public class DatabaseDescriptor
     private static final boolean disableSTCSInL0 = Boolean.getBoolean(Config.PROPERTY_PREFIX + "disable_stcs_in_l0");
     private static final boolean unsafeSystem = Boolean.getBoolean(Config.PROPERTY_PREFIX + "unsafesystem");
 
-    // turns some warnings into exceptions for testing
-    private static final boolean strictRuntimeChecks = Boolean.getBoolean("cassandra.strict.runtime.checks");
-
     public static void daemonInitialization() throws ConfigurationException
     {
         daemonInitialization(DatabaseDescriptor::loadConfig);
@@ -264,9 +261,6 @@ public class DatabaseDescriptor
     @VisibleForTesting
     public static Config loadConfig() throws ConfigurationException
     {
-        if (Config.getOverrideLoadConfig() != null)
-            return Config.getOverrideLoadConfig().get();
-
         String loaderClass = System.getProperty(Config.PROPERTY_PREFIX + "config.loader");
         ConfigurationLoader loader = loaderClass == null
                                    ? new YamlConfigurationLoader()
@@ -439,11 +433,6 @@ public class DatabaseDescriptor
             logger.info("Global memtable off-heap threshold is disabled, HeapAllocator will be used instead");
         else
             logger.info("Global memtable off-heap threshold is enabled at {}MB", conf.memtable_offheap_space_in_mb);
-
-        if (conf.repair_session_max_tree_depth < 10)
-            throw new ConfigurationException("repair_session_max_tree_depth should not be < 10, but was " + conf.repair_session_max_tree_depth);
-        if (conf.repair_session_max_tree_depth > 20)
-            logger.warn("repair_session_max_tree_depth of " + conf.repair_session_max_tree_depth + " > 20 could lead to excessive memory usage");
 
         if (conf.thrift_framed_transport_size_in_mb <= 0)
             throw new ConfigurationException("thrift_framed_transport_size_in_mb must be positive, but was " + conf.thrift_framed_transport_size_in_mb, false);
@@ -2288,22 +2277,6 @@ public class DatabaseDescriptor
         return conf.memtable_cleanup_threshold;
     }
 
-    public static int getRepairSessionMaxTreeDepth()
-    {
-        return conf.repair_session_max_tree_depth;
-    }
-
-    public static void setRepairSessionMaxTreeDepth(int depth)
-    {
-        if (depth < 10)
-            throw new ConfigurationException("Cannot set repair_session_max_tree_depth to " + depth +
-                                             " which is < 10, doing nothing");
-        else if (depth > 20)
-            logger.warn("repair_session_max_tree_depth of " + depth + " > 20 could lead to excessive memory usage");
-
-        conf.repair_session_max_tree_depth = depth;
-    }
-
     public static int getIndexSummaryResizeIntervalInMinutes()
     {
         return conf.index_summary_resize_interval_in_minutes;
@@ -2410,24 +2383,9 @@ public class DatabaseDescriptor
         conf.user_defined_function_warn_timeout = userDefinedFunctionWarnTimeout;
     }
 
-    public static boolean getEnableMaterializedViews()
+    public static boolean enableMaterializedViews()
     {
         return conf.enable_materialized_views;
-    }
-
-    public static void setEnableMaterializedViews(boolean enableMaterializedViews)
-    {
-        conf.enable_materialized_views = enableMaterializedViews;
-    }
-
-    public static boolean getEnableSASIIndexes()
-    {
-        return conf.enable_sasi_indexes;
-    }
-
-    public static void setEnableSASIIndexes(boolean enableSASIIndexes)
-    {
-        conf.enable_sasi_indexes = enableSASIIndexes;
     }
 
     public static long getUserDefinedFunctionFailTimeout()
@@ -2531,10 +2489,5 @@ public class DatabaseDescriptor
     public static BackPressureStrategy getBackPressureStrategy()
     {
         return backPressureStrategy;
-    }
-
-    public static boolean strictRuntimeChecks()
-    {
-        return strictRuntimeChecks;
     }
 }

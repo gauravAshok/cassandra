@@ -102,6 +102,7 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
                 // if we do have tasks assigned, nobody will change our state so we can simply set it to WORKING
                 // (which is also a state that will never be interrupted externally)
                 set(Work.WORKING);
+                boolean shutdown;
                 while (true)
                 {
                     // before we process any task, we maybe schedule a new worker _to our executor only_; this
@@ -114,13 +115,19 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
                     task = null;
 
                     // if we're shutting down, or we fail to take a permit, we don't perform any more work
-                    if (!assigned.takeTaskPermit())
+                    if ((shutdown = assigned.shuttingDown) || !assigned.takeTaskPermit())
                         break;
                     task = assigned.tasks.poll();
                 }
 
                 // return our work permit, and maybe signal shutdown
                 assigned.returnWorkPermit();
+                if (shutdown)
+                {
+                    if (assigned.getActiveCount() == 0)
+                        assigned.shutdown.signalAll();
+                    return;
+                }
                 assigned = null;
 
                 // try to immediately reassign ourselves some work; if we fail, start spinning
@@ -131,24 +138,22 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
         catch (Throwable t)
         {
             JVMStabilityInspector.inspectThrowable(t);
+            while (true)
+            {
+                if (get().assigned != null)
+                {
+                    assigned = get().assigned;
+                    set(Work.WORKING);
+                }
+                if (assign(Work.STOPPED, true))
+                    break;
+            }
+            if (assigned != null)
+                assigned.returnWorkPermit();
             if (task != null)
                 logger.error("Failed to execute task, unexpected exception killed worker: {}", t);
             else
                 logger.error("Unexpected exception killed worker: {}", t);
-        }
-        finally
-        {
-            if (assigned != null)
-                assigned.returnWorkPermit();
-
-            do
-            {
-                if (get().assigned != null)
-                {
-                    get().assigned.returnWorkPermit();
-                    set(Work.WORKING);
-                }
-            } while (!assign(Work.STOPPED, true));
         }
     }
 

@@ -246,8 +246,6 @@ public abstract class UnfilteredPartitionIterators
     /**
      * Digests the the provided iterator.
      *
-     * Caller must close the provided iterator.
-     *
      * @param command the command that has yield {@code iterator}. This can be null if {@code version >= MessagingService.VERSION_30}
      * as this is only used when producing digest to be sent to legacy nodes.
      * @param iterator the iterator to digest.
@@ -256,11 +254,14 @@ public abstract class UnfilteredPartitionIterators
      */
     public static void digest(ReadCommand command, UnfilteredPartitionIterator iterator, MessageDigest digest, int version)
     {
-        while (iterator.hasNext())
+        try (UnfilteredPartitionIterator iter = iterator)
         {
-            try (UnfilteredRowIterator partition = iterator.next())
+            while (iter.hasNext())
             {
-                UnfilteredRowIterators.digest(command, partition, digest, version);
+                try (UnfilteredRowIterator partition = iter.next())
+                {
+                    UnfilteredRowIterators.digest(command, partition, digest, version);
+                }
             }
         }
     }
