@@ -43,7 +43,7 @@ import static org.junit.Assert.assertEquals;
 
 public class LocalSyncTaskTest extends SchemaLoader
 {
-    private static final IPartitioner partirioner = Murmur3Partitioner.instance;
+    private static final IPartitioner partitioner = Murmur3Partitioner.instance;
     public static final String KEYSPACE1 = "DifferencerTest";
     public static final String CF_STANDARD = "Standard1";
 
@@ -65,7 +65,7 @@ public class LocalSyncTaskTest extends SchemaLoader
         final InetAddress ep1 = InetAddress.getByName("127.0.0.1");
         final InetAddress ep2 = InetAddress.getByName("127.0.0.1");
 
-        Range<Token> range = new Range<>(partirioner.getMinimumToken(), partirioner.getRandomToken());
+        Range<Token> range = new Range<>(partitioner.getMinimumToken(), partitioner.getRandomToken());
         RepairJobDesc desc = new RepairJobDesc(UUID.randomUUID(), UUID.randomUUID(), KEYSPACE1, "Standard1", Arrays.asList(range));
 
         MerkleTrees tree1 = createInitialTree(desc);
@@ -85,7 +85,7 @@ public class LocalSyncTaskTest extends SchemaLoader
     @Test
     public void testDifference() throws Throwable
     {
-        Range<Token> range = new Range<>(partirioner.getMinimumToken(), partirioner.getRandomToken());
+        Range<Token> range = new Range<>(partitioner.getMinimumToken(), partitioner.getRandomToken());
         UUID parentRepairSession = UUID.randomUUID();
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore("Standard1");
@@ -99,7 +99,7 @@ public class LocalSyncTaskTest extends SchemaLoader
         MerkleTrees tree2 = createInitialTree(desc);
 
         // change a range in one of the trees
-        Token token = partirioner.midpoint(range.left, range.right);
+        Token token = partitioner.midpoint(range.left, range.right);
         tree1.invalidate(token);
         MerkleTree.TreeRange changed = tree1.get(token);
         changed.hash("non-empty hash!".getBytes());
@@ -120,7 +120,7 @@ public class LocalSyncTaskTest extends SchemaLoader
 
     private MerkleTrees createInitialTree(RepairJobDesc desc)
     {
-        MerkleTrees tree = new MerkleTrees(partirioner);
+        MerkleTrees tree = new MerkleTrees(partitioner);
         tree.addMerkleTrees((int) Math.pow(2, 15), desc.ranges);
         tree.init();
         for (MerkleTree.TreeRange r : tree.invalids())

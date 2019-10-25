@@ -17,6 +17,9 @@
  */
 package org.apache.cassandra.db;
 
+import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.dht.Token.KeyBound;
@@ -138,8 +141,15 @@ public abstract class DecoratedKey implements PartitionPosition, FilterKey
 
     public static TimeWindow interpretTimeBucket(ByteBuffer buffer)
     {
-        // The key is encoded: 2 byte encoding the length of data (12 in this case), a long after that and a int after that
-        return new TimeWindow(buffer.getLong(buffer.position() + 2), buffer.getInt(buffer.position() + 10));
+        // first 2 columns are timestamp (long) and duration (int).
+        // offset   : value
+        // 0        : 8
+        // 2        : timestamp
+        // 10       : 1 byte of delimiter
+        // 11       : 4
+        // 13       : duration
+        // TODO: it is tightly coupled with the types. We need the first 2 columns of type long and int respectively.
+        return new TimeWindow(buffer.getLong(buffer.position() + 2), buffer.getInt(buffer.position() + 13));
     }
 
     public abstract ByteBuffer getKey();

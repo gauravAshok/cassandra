@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
+import org.apache.cassandra.db.marshal.*;
 import org.apache.commons.lang3.StringUtils;
 
 import org.slf4j.Logger;
@@ -51,9 +52,6 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.Directories.DataDirectory;
 import org.apache.cassandra.db.compaction.AbstractCompactionTask;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.AsciiType;
-import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.dht.IPartitioner;
@@ -105,12 +103,7 @@ public class Util
 
     public static DecoratedKey dk(long ts, int duration)
     {
-        ByteBuffer bf = ByteBuffer.allocate(2 + 8 + 4);
-        bf.putShort((short)12);
-        bf.putLong(ts);
-        bf.putInt(duration);
-        bf.flip();
-
+        ByteBuffer bf = CompositeType.getInstance(LongType.instance, Int32Type.instance).decompose(ts, duration);
         return testPartitioner().decorateKey(bf);
     }
 

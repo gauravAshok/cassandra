@@ -24,7 +24,6 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
-import java.nio.ByteBuffer;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;

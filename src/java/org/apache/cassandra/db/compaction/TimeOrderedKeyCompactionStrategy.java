@@ -29,6 +29,7 @@ import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.schema.CompactionParams;
 import org.apache.cassandra.utils.ComparablePair;
 import org.apache.cassandra.utils.FBUtilities;
@@ -113,10 +114,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
             LifecycleTransaction modifier = cfs.getTracker().tryModify(sstables.sstables, OperationType.COMPACTION);
             if (modifier != null)
             {
-                if (logger.isDebugEnabled())
-                {
-                    logger.debug("compaction task: {}", sstables);
-                }
+                logger.info("compaction task: {}", sstables);
                 return buildCompactionTask(sstables, modifier, gcBefore);
             }
             previousCandidate = sstables;
@@ -169,9 +167,18 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
         if (!wideTombstoneSStables.isEmpty())
         {
+            if (logger.isDebugEnabled())
+            {
+                logger.debug("found {} wide tombstone tables for compaction: \n{}", wideTombstoneSStables.size(),
+                        wideTombstoneSStables.stream().map(s -> {
+                            Pair<Long, Long> window = getWindow(s, windowSizeInSec);
+                            return s.descriptor.generation + " : " + window.left + " with " + (window.right * windowSizeInSec) + " seconds";
+                        }).collect(Collectors.joining("\n")));
+            }
             return new SSTablesForCompaction(wideTombstoneSStables, true, true);
         }
 
+        // TODO: maybe look at the data sstables too. streaming to new node can lead to fragmented data sstables which may need compaction (verify). Explore!!
         return getSSTablesForCompaction(gcBefore, tombstoneSStables);
     }
 
@@ -183,6 +190,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         SSTablesStats ssTablesStats = buildPerWindowSStablesStats(cfs, fullyExpired, windowSizeInSec);
         populateGlobalStats(cfs, ssTablesStats);
 
+        // TODO: maybe too late to estimate the remaining tasks. When compacting latest tombstones, we wont get the chance to update this. Correct it!!!
         updateEstimatedCompactionsByTasks(ssTablesStats);
 
         Optional<Map.Entry<Long, WindowedSStablesStats>> maxGarbageWindow =
@@ -191,28 +199,52 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         if (maxGarbageWindow.isPresent())
         {
             WindowedSStablesStats stats = maxGarbageWindow.get().getValue();
-            long threshold = Long.min((long) (stats.dataSizeOnDisk * (options.windowCompactionSizePercent / 100.0)), options.windowCompactionSizeInMB * 1024 * 1024);
-
-            long globalThreshold = Long.min((long) (ssTablesStats.totalDataSizeOnDisk * (options.windowCompactionGlobalSizePercent / 100.0)), options.windowCompactionGlobalSizeInMB * 1024 * 1024);
-
-            // if we are breaching the per window or global garbage threshold, compact it.
-            if (stats.estimatedGarbage >= threshold || ssTablesStats.totalEstimatedGarbage >= globalThreshold)
+            if (!stats.tombstoneSStables.isEmpty())
             {
-                List<SSTableReader> candidates = new ArrayList<>(stats.tombstoneSStables);
-                candidates.addAll(stats.dataSStables);
-                return new SSTablesForCompaction(candidates, false, true);
+                Pair<Long, Long> threshold = getGarbageThreshold(ssTablesStats.totalDataSizeOnDisk, stats.dataSizeOnDisk);
+
+                logger.info("garbage check: {}/{} MB, threshold: {}/{} MB",
+                        stats.estimatedGarbage / (double) FileUtils.ONE_MB, ssTablesStats.totalEstimatedGarbage / (double) FileUtils.ONE_MB,
+                        threshold.left / (double) FileUtils.ONE_MB, threshold.right / (double) FileUtils.ONE_MB);
+
+                // if we are breaching the per window or global garbage threshold, compact it.
+                if (stats.estimatedGarbage >= threshold.left || ssTablesStats.totalEstimatedGarbage >= threshold.right)
+                {
+                    List<SSTableReader> candidates = new ArrayList<>(stats.tombstoneSStables);
+                    candidates.addAll(stats.dataSStables);
+                    return new SSTablesForCompaction(candidates, false, true);
+                }
             }
         }
 
-        // no substantial garbage found, just merge some tombstone files to reduce number of sstables
-        Optional<Map.Entry<Long, WindowedSStablesStats>> fragmentedWindow =
-                ssTablesStats.windowedStats.entrySet().stream().max(Comparator.comparingLong(x -> x.getValue().tombstoneSStables.size()));
+        // no substantial garbage found, just merge some files to reduce number of sstables
+        Optional<Map.Entry<Long, WindowedSStablesStats>> fragmentedWindow = mostFragmented(ssTablesStats);
 
         if (fragmentedWindow.isPresent())
         {
-            return new SSTablesForCompaction(new ArrayList<>(fragmentedWindow.get().getValue().tombstoneSStables), true, false);
+            long timeWindow = fragmentedWindow.get().getKey();
+            WindowedSStablesStats stats = fragmentedWindow.get().getValue();
+            logger.info("fragmentation check: {}, total: {}, data: {}", timeWindow, stats.maxFragmentation, stats.maxDataSStableFragmentation);
+
+            List<SSTableReader> sstables = new ArrayList<>();
+            sstables.addAll(stats.tombstoneSStables);
+            boolean onlyTombstoneMerge = true;
+
+            // there can always be an overlap of 1 whenever an sstable gets flushed.
+            if (stats.maxDataSStableFragmentation > 1)
+            {
+                sstables.addAll(stats.dataSStables);
+                onlyTombstoneMerge = false;
+            }
+
+            if (sstables.size() > 1)
+            {
+                // TODO: splitsstables should probably be false!!
+                return new SSTablesForCompaction(sstables, onlyTombstoneMerge, true);
+            }
         }
 
+        logger.info("nothing found to compact");
         return SSTablesForCompaction.EMPTY;
     }
 
@@ -265,6 +297,10 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                     value.dataSizeOnDisk);
 
             value.estimatedGarbage = Math.min((long) estimatedGarbage, value.dataSizeOnDisk);
+
+            // compute fragmentation stats
+            value.maxDataSStableFragmentation = maxOverlap(value.dataSStables);
+            value.maxFragmentation = value.maxDataSStableFragmentation + value.tombstoneSStables.size();
         });
 
         return stats;
@@ -321,8 +357,6 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
             if (candidate.getSSTableMetadata().maxLocalDeletionTime < gcBefore)
             {
                 fullyExpired.add(candidate);
-                logger.trace("Dropping overlap ignored expired SSTable {} (maxLocalDeletionTime={}, gcBefore={})",
-                        candidate, candidate.getSSTableMetadata().maxLocalDeletionTime, gcBefore);
             }
         }
 
@@ -342,32 +376,34 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
         List<SSTableWithKeyRange> sortedByKey = new ArrayList<>();
         sstables.forEach(s -> sortedByKey.add(new SSTableWithKeyRange(s)));
-        sortedByKey.sort(Comparator.comparingLong(s -> s.min));
+        sortedByKey.sort(Comparator.naturalOrder());
 
         List<Pair<Long, Long>> bounds = new ArrayList<>();
         long first = 0, last = Long.MAX_VALUE;
 
         Iterator<SSTableWithKeyRange> it = sortedByKey.iterator();
-        if(it.hasNext()) {
+        if (it.hasNext())
+        {
             SSTableWithKeyRange sstable = it.next();
-            first = sstable.min;
-            last = sstable.max;
+            first = sstable.left;
+            last = sstable.right;
         }
 
-        while(it.hasNext()) {
+        while (it.hasNext())
+        {
             SSTableWithKeyRange sstable = it.next();
-            if (sstable.min <= last) // we do overlap
+            if (sstable.left <= last) // we do overlap
             {
-                if (sstable.max > last)
+                if (sstable.right > last)
                 {
-                    last = sstable.max;
+                    last = sstable.right;
                 }
             }
             else
             {
                 bounds.add(Pair.create(first, last));
-                first = sstable.min;
-                last = sstable.max;
+                first = sstable.left;
+                last = sstable.right;
             }
         }
 
@@ -380,6 +416,55 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         }
 
         return Sets.difference(results, ImmutableSet.copyOf(sstables));
+    }
+
+    static Optional<Map.Entry<Long, WindowedSStablesStats>> mostFragmented(SSTablesStats stats)
+    {
+        return stats.windowedStats.entrySet().stream()
+                .max(Comparator.<Map.Entry<Long, WindowedSStablesStats>>comparingInt(s -> s.getValue().maxFragmentation)
+                        .thenComparingInt(s -> s.getValue().maxDataSStableFragmentation));
+    }
+
+    static int maxOverlap(List<SSTableReader> dataSStables)
+    {
+        List<TimeBoundary> timeboundaries = new ArrayList<>();
+        dataSStables.forEach(s -> {
+            timeboundaries.add(new TimeBoundary(s.getSSTableMetadata().minKey, true));
+            timeboundaries.add(new TimeBoundary(s.getSSTableMetadata().maxKey, false));
+        });
+
+        Collections.sort(timeboundaries);
+
+        int maxOverlap = -1, currOverlap = -1;
+        for (TimeBoundary tb : timeboundaries)
+        {
+            if (tb.isStartBoundary())
+            {
+                ++currOverlap;
+            }
+            else
+            {
+                --currOverlap;
+            }
+            if (currOverlap > maxOverlap)
+            {
+                maxOverlap = currOverlap;
+            }
+        }
+        return Math.max(0, maxOverlap);
+    }
+
+    private static class TimeBoundary extends ComparablePair<Long, Integer>
+    {
+        TimeBoundary(Long time, boolean start)
+        {
+            super(time, start ? 1 : 0);
+        }
+
+        boolean isStartBoundary()
+        {
+            return this.right == 1;
+        }
     }
 
     @Override
@@ -418,18 +503,14 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
     private void updateEstimatedCompactionsByTasks(SSTablesStats stats)
     {
-        int n = stats.windowedStats.size();
-
-        long now = FBUtilities.nowInSeconds();
-        long windowSizeInSec = windowSizeInSec();
-        long currentWindow = toWindow(now, windowSizeInSec);
-        long tombstoneDelayedWindow = toWindow(now, tombstoneCompactionDelayInSec());
-
-        int pendingWindows = (int) ((tombstoneDelayedWindow - currentWindow) / windowSizeInSec);
-
-        n += pendingWindows;
-
+        int n = (int) stats.windowedStats.entrySet().stream().filter(s -> isCandidateForCompaction(s.getValue())).count();
+        logger.info("pending tasks: {}, total_time_windows: {}", n, stats.windowedStats.size());
         this.estimatedRemainingTasks = n;
+    }
+
+    private boolean isCandidateForCompaction(WindowedSStablesStats stat)
+    {
+        return !stat.tombstoneSStables.isEmpty() || stat.maxDataSStableFragmentation > 0;
     }
 
     @Override
@@ -493,7 +574,8 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
     public String toString()
     {
-        return String.format("TimeOrderedKeyCompactionStrategy[%s/%s]", cfs.getMinimumCompactionThreshold(), cfs.getMaximumCompactionThreshold());
+        // TODO: add important options here.
+        return "TimeOrderedKeyCompactionStrategy";
     }
 
     @Override
@@ -512,21 +594,18 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         return TimeUnit.SECONDS.convert(options.tombstoneCompactionDelay, options.tombstoneCompactionDelayUnit);
     }
 
-    private static class SSTableWithKeyRange
+    private static class SSTableWithKeyRange extends ComparablePair<Long, Long>
     {
         final SSTableReader sstable;
-        final long min;
-        final long max;
 
         SSTableWithKeyRange(SSTableReader sstable)
         {
+            super(sstable.getSSTableMetadata().minKey, sstable.getSSTableMetadata().maxKey);
             this.sstable = sstable;
-            this.min = sstable.getSSTableMetadata().minKey;
-            this.max = sstable.getSSTableMetadata().maxKey;
         }
     }
 
-    protected static class SSTablesForCompaction
+    static class SSTablesForCompaction
     {
         final List<SSTableReader> sstables;
         final boolean tombstoneMerge;
@@ -559,20 +638,38 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         @Override
         public String toString()
         {
+            ArrayList<String> tombstoneGens = new ArrayList<>(sstables.size());
+            ArrayList<String> dataGens = new ArrayList<>(sstables.size());
+            for (SSTableReader sstable : sstables)
+            {
+                int gen = sstable.descriptor.generation;
+                if (sstable.getSSTableLevel() == Memtable.TOMBSTONE_SSTABLE_LVL)
+                {
+                    tombstoneGens.add(String.valueOf(gen));
+                }
+                else
+                {
+                    dataGens.add(String.valueOf(gen));
+                }
+            }
+
             return "SSTablesForCompaction{" +
-                    "\nsstables=" + sstables +
+                    "\n tombstones=" + String.join(";", tombstoneGens) +
+                    ",\n data=" + String.join(";", dataGens) +
                     ",\n tombstoneMerge=" + tombstoneMerge +
                     ",\n splitSStable=" + splitSStable +
                     "\n}";
         }
     }
 
-    protected static class WindowedSStablesStats
+    static class WindowedSStablesStats
     {
         List<SSTableReader> tombstoneSStables = new ArrayList<>();
         List<SSTableReader> dataSStables = new ArrayList<>();
         long dataSizeOnDisk = 0;
         long estimatedGarbage = 0;
+        int maxFragmentation = 0;
+        int maxDataSStableFragmentation = 0;
 
         @Override
         public String toString()
@@ -582,11 +679,25 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                     ", dataSStables=" + dataSStables +
                     ", dataSizeOnDisk=" + dataSizeOnDisk +
                     ", estimatedGarbage=" + estimatedGarbage +
+                    ", maxFragmentation=" + maxFragmentation +
+                    ", maxDataSStableFragmentation=" + maxDataSStableFragmentation +
                     '}';
         }
     }
 
-    protected static class SSTablesStats
+    private Pair<Long, Long> getGarbageThreshold(long totalSizeOnDisk, long windowDataSizeOnDisk)
+    {
+        return Pair.create(
+                Long.min(
+                        (long) (windowDataSizeOnDisk * (options.windowCompactionSizePercent / 100.0)),
+                        options.windowCompactionSizeInMB * FileUtils.ONE_MB),
+                Long.min(
+                        (long) (totalSizeOnDisk * (options.windowCompactionGlobalSizePercent / 100.0)),
+                        options.windowCompactionGlobalSizeInMB * FileUtils.ONE_MB
+                ));
+    }
+
+    static class SSTablesStats
     {
         Map<Long, WindowedSStablesStats> windowedStats = new HashMap<>();
         long totalDataSizeOnDisk = 0;
