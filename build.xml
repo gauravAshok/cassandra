@@ -77,7 +77,7 @@
     <condition property="version" value="${base.version}">
       <isset property="release"/>
     </condition>
-    <property name="version" value="${base.version}-SNAPSHOT"/>
+    <property name="version" value="${base.version}"/>
     <property name="version.properties.dir"
               value="${build.src.resources}/org/apache/cassandra/config/" />
     <property name="final.name" value="${ant.project.name}-${version}"/>

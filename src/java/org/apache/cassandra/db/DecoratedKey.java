@@ -17,15 +17,13 @@
  */
 package org.apache.cassandra.db;
 
-import org.apache.cassandra.db.marshal.CompositeType;
-import org.apache.cassandra.db.marshal.Int32Type;
-import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.dht.Token.KeyBound;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.IFilter.FilterKey;
 import org.apache.cassandra.utils.MurmurHash;
+import org.apache.cassandra.utils.TimeWindow;
 
 import java.nio.ByteBuffer;
 import java.util.Comparator;
@@ -158,16 +156,5 @@ public abstract class DecoratedKey implements PartitionPosition, FilterKey
     {
         ByteBuffer key = getKey();
         MurmurHash.hash3_x64_128(key, key.position(), key.remaining(), 0, dest);
-    }
-
-    public static class TimeWindow {
-        public final long ts;
-        public final int durationMs;
-
-        public TimeWindow(long ts, int durationMs)
-        {
-            this.ts = ts;
-            this.durationMs = durationMs;
-        }
     }
 }
