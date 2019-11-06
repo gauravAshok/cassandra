@@ -89,6 +89,6 @@ public class TimeWindow
     @Override
     public String toString()
     {
-         return "TimeWindow{" + ts + ':' + duration + '}';
+         return "TimeWindow{" + ts + '-' + duration + '}';
     }
 }

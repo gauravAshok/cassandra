@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
 import org.apache.cassandra.db.marshal.*;
@@ -515,13 +514,7 @@ public class Util
     public static void assertColumns(Row row, String... expectedColumnNames)
     {
         Iterator<Cell> cells = row == null ? Collections.emptyIterator() : row.cells().iterator();
-        String[] actual = Iterators.toArray(Iterators.transform(cells, new Function<Cell, String>()
-        {
-            public String apply(Cell cell)
-            {
-                return cell.column().name.toString();
-            }
-        }), String.class);
+        String[] actual = Iterators.toArray(Iterators.transform(cells, cell -> cell.column().name.toString()), String.class);
 
         assert Arrays.equals(actual, expectedColumnNames)
         : String.format("Columns [%s])] is not expected [%s]",
