@@ -38,6 +38,7 @@ import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.index.transactions.UpdateTransaction;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableMultiWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.util.FileUtils;
@@ -87,9 +88,6 @@ public class Memtable implements Comparable<Memtable>
     }
 
     private static final int ROW_OVERHEAD_HEAP_SIZE = estimateRowOverhead(Integer.parseInt(System.getProperty("cassandra.memtable_row_overhead_computation_step", "100000")));
-
-    public static final int DATA_SSTABLE_LVL = 0;
-    public static final int TOMBSTONE_SSTABLE_LVL = 1;
 
     private final MemtableAllocator allocator;
     private final AtomicLong liveDataSize = new AtomicLong(0);
@@ -445,16 +443,16 @@ public class Memtable implements Comparable<Memtable>
 
             if (flushLocation == null)
             {
-                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile(estimatedSize)), columnsCollector.get(), statsCollector.get(), DATA_SSTABLE_LVL);
+                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile(estimatedSize)), columnsCollector.get(), statsCollector.get(), SSTable.DATA_SSTABLE_LVL);
                 tombstoneWriter = split
-                        ? createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile((long) (keySize * 1.5))), columnsCollector.get(), statsCollector.get(), TOMBSTONE_SSTABLE_LVL)
+                        ? createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile((long) (keySize * 1.5))), columnsCollector.get(), statsCollector.get(), SSTable.TOMBSTONE_SSTABLE_LVL)
                         : null;
             }
             else
             {
-                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get(), DATA_SSTABLE_LVL);
+                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get(), SSTable.DATA_SSTABLE_LVL);
                 tombstoneWriter = split
-                        ? createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get(), TOMBSTONE_SSTABLE_LVL)
+                        ? createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get(), SSTable.TOMBSTONE_SSTABLE_LVL)
                         : null;
             }
         }

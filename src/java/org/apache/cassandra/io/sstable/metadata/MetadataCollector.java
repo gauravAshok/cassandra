@@ -37,10 +37,7 @@ import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.service.ActiveRepairService;
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.EstimatedHistogram;
-import org.apache.cassandra.utils.MurmurHash;
-import org.apache.cassandra.utils.StreamingHistogram;
+import org.apache.cassandra.utils.*;
 
 public class MetadataCollector implements PartitionStatisticsCollector
 {
@@ -147,9 +144,9 @@ public class MetadataCollector implements PartitionStatisticsCollector
         cardinality.offerHashed(hashed);
         if(trackKeyRange)
         {
-            DecoratedKey.TimeWindow tw = DecoratedKey.interpretTimeBucket(key);
+            TimeWindow tw = DecoratedKey.interpretTimeBucket(key);
             keyRangeTracker.update(tw.ts);
-            keyRangeTracker.update(tw.ts + tw.durationMs);
+            keyRangeTracker.update(tw.getEndTs());
         }
         return this;
     }

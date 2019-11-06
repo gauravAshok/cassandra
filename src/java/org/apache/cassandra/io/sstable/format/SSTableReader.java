@@ -17,38 +17,22 @@
  */
 package org.apache.cassandra.io.sstable.format;
 
-import java.io.*;
-import java.lang.ref.WeakReference;
-import java.nio.ByteBuffer;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-
+import com.clearspring.analytics.stream.cardinality.CardinalityMergeException;
+import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
+import com.clearspring.analytics.stream.cardinality.ICardinality;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Ordering;
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.RateLimiter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.clearspring.analytics.stream.cardinality.CardinalityMergeException;
-import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
-import com.clearspring.analytics.stream.cardinality.ICardinality;
-
 import org.apache.cassandra.cache.ChunkCache;
 import org.apache.cassandra.cache.InstrumentingCache;
 import org.apache.cassandra.cache.KeyCacheKey;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.config.SchemaConstants;
+import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.Cell;
@@ -73,6 +57,16 @@ import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.concurrent.Ref;
 import org.apache.cassandra.utils.concurrent.SelfRefCounted;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.lang.ref.WeakReference;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.apache.cassandra.db.Directories.SECONDARY_INDEX_NAME_SEPARATOR;
 
@@ -230,6 +224,23 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     private volatile double crcCheckChance;
 
+    public static ICardinality getCardinality(SSTableReader sstable) throws IOException
+    {
+        if (sstable.descriptor.version.hasNewStatsFile() && sstable.openReason != OpenReason.EARLY)
+        {
+            CompactionMetadata metadata = (CompactionMetadata) sstable.descriptor.getMetadataSerializer().deserialize(sstable.descriptor, MetadataType.COMPACTION);
+            if (metadata != null)
+            {
+                return metadata.cardinalityEstimator;
+            }
+            else
+            {
+                logger.warn("Reading cardinality from Statistics.db failed for {}", sstable.getFilename());
+            }
+        }
+        return null;
+    }
+
     /**
      * Calculate approximate key count.
      * If cardinality estimator is available on all given sstables, then this method use them to estimate
@@ -264,10 +275,9 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
                 try
                 {
-                    CompactionMetadata metadata = (CompactionMetadata) sstable.descriptor.getMetadataSerializer().deserialize(sstable.descriptor, MetadataType.COMPACTION);
-                    // If we can't load the CompactionMetadata, we are forced to estimate the keys using the index
-                    // summary. (CASSANDRA-10676)
-                    if (metadata == null)
+                    ICardinality c = getCardinality(sstable);
+
+                    if (c == null)
                     {
                         logger.warn("Reading cardinality from Statistics.db failed for {}", sstable.getFilename());
                         failed = true;
@@ -275,9 +285,9 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                     }
 
                     if (cardinality == null)
-                        cardinality = metadata.cardinalityEstimator;
+                        cardinality = c;
                     else
-                        cardinality = cardinality.merge(metadata.cardinalityEstimator);
+                        cardinality = cardinality.merge(c);
                 }
                 catch (IOException e)
                 {

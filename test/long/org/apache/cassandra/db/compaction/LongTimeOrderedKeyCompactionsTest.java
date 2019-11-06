@@ -58,7 +58,7 @@ public class LongTimeOrderedKeyCompactionsTest
     public static void defineSchema() throws ConfigurationException
     {
         // 1000,50.0 means compact when (1000 MB or 50% whichever is lower) of the data is garbage.
-        Map<String, String> compactionOptions = TOKCSUtil.getTOKCSOptions("1000,50.0", "1000,50.0", 30);
+        Map<String, String> compactionOptions = TOKCSUtil.getTOKCSOptions("1000,50.0", "1000,50.0", 30, 3);
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE1,
                 KeyspaceParams.simple(1),

@@ -88,7 +88,7 @@ public class CompactionsCQLTest extends CQLTester
     @Test
     public void testTriggerMinorCompactionTOKCSCompactTombstones() throws Throwable
     {
-        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0));
+        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0, 3));
         assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
         execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(1), 1000, Util.dt(1));
         execute("delete from %s where id = ? and duration_ms = ? and id_ck = ?", Util.dt(1), 1000, Util.dt(1));
@@ -111,7 +111,7 @@ public class CompactionsCQLTest extends CQLTester
     @Test
     public void testTriggerMinorCompactionTOKCSCompactTombstoneWithData() throws Throwable
     {
-        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0));
+        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 0, 3));
         assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
         execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(1), 1000, Util.dt(1));
         flush();
@@ -132,7 +132,7 @@ public class CompactionsCQLTest extends CQLTester
     @Test
     public void testTriggerMinorCompactionTOKCSCompactTombstoneSplitting() throws Throwable
     {
-        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 120));
+        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 120, 3));
         assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
         execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(121), 1000, Util.dt(121));
         execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(122), 1000, Util.dt(122));

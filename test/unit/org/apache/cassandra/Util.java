@@ -38,6 +38,7 @@ import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
 import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.commons.lang3.StringUtils;
 
 import org.slf4j.Logger;
@@ -732,14 +733,13 @@ public class Util
 
     public static Set<SSTableReader> tombstonesOnly(Collection<SSTableReader> sstables) {
         return sstables.stream()
-                .filter(s -> s.getSSTableMetadata().sstableLevel == Memtable.TOMBSTONE_SSTABLE_LVL)
+                .filter(s -> s.getSSTableMetadata().sstableLevel == SSTable.TOMBSTONE_SSTABLE_LVL)
                 .collect(Collectors.toSet());
     }
 
     public static Set<SSTableReader> dataOnly(Collection<SSTableReader> sstables) {
         return sstables.stream()
-                .filter(s -> s.getSSTableMetadata().sstableLevel == Memtable.DATA_SSTABLE_LVL)
+                .filter(s -> s.getSSTableMetadata().sstableLevel == SSTable.DATA_SSTABLE_LVL)
                 .collect(Collectors.toSet());
     }
-
 }
