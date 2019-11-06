@@ -115,7 +115,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
             LifecycleTransaction modifier = cfs.getTracker().tryModify(candidate.sstables, OperationType.COMPACTION);
             if (modifier != null)
             {
-                logger.info("compaction task: {}", candidate);
+                logger.debug("compaction task: {}", candidate);
                 return buildCompactionTask(candidate, modifier, gcBefore);
             }
             previousCandidate = candidate;
@@ -133,11 +133,11 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
      * [expired, nearExpiry, latest]. See the inline documentation.
      * <p>
      * There are 2 parameters that will affect the performance of the operations on tables with this compaction strategy.
-     * 1. Time overlap between sstables. High overlap -> High read latency.
+     * 1. Time overlap between sstables. Many files overlaping with each other -> High read latency.
      * 2. Time range of a sstable. Large range -> large size. Likelihood of it overlapping with other sstables also increases when the range is large, which
      * will lead to larger cost in compaction. Compaction will be most efficient if there are fewer files to compact at a time.
      * <p>
-     * This compaction strategy aims to reduce the max overlaps and the number of sstables.
+     * This compaction strategy aims to reduce the max overlap and the number of sstables.
      *
      * @param gcBefore
      * @return

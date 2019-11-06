@@ -105,7 +105,7 @@ public class Cassandra {
     public Map<ByteBuffer,List<ColumnOrSuperColumn>> multiget_slice(List<ByteBuffer> keys, ColumnParent column_parent, SlicePredicate predicate, ConsistencyLevel consistency_level) throws InvalidRequestException, UnavailableException, TimedOutException, org.apache.thrift.TException;
 
     /**
-     * Perform a get_count in parallel on the given {@code List<binary>} keys. The return value maps keys to the count found.
+     * Perform a get_count in parallel on the given list<binary> keys. The return value maps keys to the count found.
      * 
      * @param keys
      * @param column_parent
