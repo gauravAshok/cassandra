@@ -50,7 +50,7 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
         // Disabling durable write since we don't care
         schemaChange("CREATE KEYSPACE IF NOT EXISTS " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'} AND durable_writes=false");
         schemaChange(String.format("CREATE TABLE %s.%s (k TIMESTAMP, duration_ms INT, name TEXT, t int, v blob, PRIMARY KEY ((k, duration_ms, name), t)) \n" +
-                TOKCSUtil.getCQLFramgentForTOKCS("1024,50", 0), KEYSPACE, TABLE));
+                TOKCSUtil.getCQLFramgentForTOKCS("1024,50", 0, 3), KEYSPACE, TABLE));
     }
 
     @AfterClass
@@ -73,7 +73,7 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
         populate(rowCount);
         LifecycleTransaction txn = cfs.getTracker().tryModify(cfs.getLiveSSTables(), OperationType.COMPACTION);
         long beforeSize = txn.originals().iterator().next().onDiskLength();
-        CompactionAwareWriter writer = new TimeBasedSplittingCompactionWriter(cfs, cfs.getDirectories(), txn, txn.originals(), false, 60, 0, rowCount / 60 + 1, 0);
+        CompactionAwareWriter writer = new TimeBasedSplittingCompactionWriter(cfs, cfs.getDirectories(), txn, txn.originals(), false, 60, 0, rowCount / 60 + 1, 0, 3);
 
         int rows = compact(cfs, txn, writer);
         long expectedSize = beforeSize * 60 / rowCount;

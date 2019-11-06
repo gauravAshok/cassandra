@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.db.compaction.writers;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.Directories.DataDirectory;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
@@ -32,9 +33,10 @@ import java.util.concurrent.TimeUnit;
 
 public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
 {
-    private final long windowSizeInSec;
+    private final int windowSizeInSec;
+    private final int splitWindowCount;
     private final long windowStartInSec;
-    private final long windowCount;
+    private final int windowCount;
     private final int level;
     private final Set<SSTableReader> allSSTables;
     private SSTableWriter[] ssTableWriters;
@@ -46,19 +48,21 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
             LifecycleTransaction txn,
             Set<SSTableReader> nonExpiredSSTables,
             boolean keepOriginals,
-            long windowSizeInSec,
-            long windowStartInMin,
-            long windowCount,
-            int level)
+            int windowSizeInSec,
+            long windowStartInSec,
+            int windowCount,
+            int level,
+            int splitFactor)
     {
 
         super(cfs, directories, txn, nonExpiredSSTables, keepOriginals);
         this.windowSizeInSec = windowSizeInSec;
-        this.windowStartInSec = windowStartInMin;
+        this.windowStartInSec = windowStartInSec;
         this.windowCount = windowCount;
         this.allSSTables = txn.originals();
         this.level = level;
-        this.ssTableWriters = new SSTableWriter[(int) windowCount];
+        this.splitWindowCount = windowCount % splitFactor == 0 ? windowCount / splitFactor : 1 + windowCount / splitFactor;
+        this.ssTableWriters = new SSTableWriter[splitFactor];
     }
 
     @Override
@@ -80,11 +84,13 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
         return rie != null;
     }
 
-    private int getWindowIndex(DecoratedKey pk)
+    @VisibleForTesting
+    int getWindowIndex(DecoratedKey pk)
     {
         long ts = pk.interpretTimeBucket().ts;
         long delta = TimeUnit.SECONDS.convert(ts, TimeUnit.MILLISECONDS) - windowStartInSec;
-        return (int) (delta / windowSizeInSec);
+        int window = (int)(delta / windowSizeInSec);
+        return window / splitWindowCount;
     }
 
     @Override
@@ -92,7 +98,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     {
         // TODO: may have to consider the situation where directory is repeated.
         sstableDirectory = directory;
-        ssTableWriters = new SSTableWriter[(int) windowCount];
+        ssTableWriters = new SSTableWriter[windowCount];
     }
 
     @SuppressWarnings("resource")

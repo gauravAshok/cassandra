@@ -20,18 +20,13 @@ package org.apache.cassandra.db.compaction;
 
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.utils.Pair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 final class TimeOrderedKeyCompactionStrategyOptions
 {
-    private static final Logger logger = LoggerFactory.getLogger(TimeOrderedKeyCompactionStrategyOptions.class);
-
-    protected static final String TOMBSTONE_COMPACTION_DELAY_UNIT_KEY = "tombstone_compaction_delay_unit";
-    protected static final String TOMBSTONE_COMPACTION_DELAY_KEY = "tombstone_compaction_delay";
+    protected static final String SPLIT_FACTOR_KEY = "split_factor";
+    protected static final int DEFAULT_SPLIT_FACTOR = 8;
 
     // format: "1230,40.0" : 1230MB or 40%
     // default: "int_max:20" : 20% of the keys are tombstoned
@@ -41,8 +36,6 @@ final class TimeOrderedKeyCompactionStrategyOptions
     protected static final String GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY = "global_garbage_size_threshold";
 
     final TimeWindowCompactionStrategyOptions twcsOptions;
-    final long tombstoneCompactionDelay;
-    final TimeUnit tombstoneCompactionDelayUnit;
 
     final long windowCompactionSizeInMB;
     final double windowCompactionSizePercent;
@@ -50,80 +43,30 @@ final class TimeOrderedKeyCompactionStrategyOptions
     final long windowCompactionGlobalSizeInMB;
     final double windowCompactionGlobalSizePercent;
 
+    final int splitFactor;
+
     TimeOrderedKeyCompactionStrategyOptions(Map<String, String> options)
     {
 
         this.twcsOptions = new TimeWindowCompactionStrategyOptions(options);
 
-        String optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY);
-        tombstoneCompactionDelayUnit = optionValue == null ? twcsOptions.sstableWindowUnit : TimeUnit.valueOf(optionValue);
-
-        optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_KEY);
-        tombstoneCompactionDelay = optionValue == null ? twcsOptions.sstableWindowSize : Integer.parseInt(optionValue);
-
         Pair<Long, Double> thresholdOption = parseSizeThreshold(options.get(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY));
-        windowCompactionSizeInMB = thresholdOption.left;
-        windowCompactionSizePercent = thresholdOption.right;
+        this.windowCompactionSizeInMB = thresholdOption.left;
+        this.windowCompactionSizePercent = thresholdOption.right;
 
         thresholdOption = parseSizeThreshold(options.get(GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY));
-        windowCompactionGlobalSizeInMB = thresholdOption.left;
-        windowCompactionGlobalSizePercent = thresholdOption.right;
+        this.windowCompactionGlobalSizeInMB = thresholdOption.left;
+        this.windowCompactionGlobalSizePercent = thresholdOption.right;
+
+        String splitFactorOption = options.get(SPLIT_FACTOR_KEY);
+        this.splitFactor = splitFactorOption == null ? DEFAULT_SPLIT_FACTOR : Integer.parseInt(splitFactorOption);
     }
 
     public static Map<String, String> validateOptions(Map<String, String> options, Map<String, String> uncheckedOptions) throws ConfigurationException
     {
         uncheckedOptions = TimeWindowCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
 
-        TimeWindowCompactionStrategyOptions timeWindowOptions = new TimeWindowCompactionStrategyOptions(options);
-
-        long compactionWindowSize, tombstoneDelay;
-
-        String optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_KEY);
-        try
-        {
-            tombstoneDelay = optionValue == null ? timeWindowOptions.sstableWindowSize : Integer.parseInt(optionValue);
-            if (tombstoneDelay < 1)
-            {
-                throw new ConfigurationException(String.format("%d must be greater than equal to 1 for %s", tombstoneDelay, TOMBSTONE_COMPACTION_DELAY_KEY));
-            }
-        }
-        catch (NumberFormatException e)
-        {
-            throw new ConfigurationException(String.format("%s is not a parsable int (base10) for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_KEY), e);
-        }
-
-        optionValue = options.get(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY);
-        try
-        {
-            if (optionValue != null)
-            {
-                if (!TimeWindowCompactionStrategyOptions.validWindowTimeUnits.contains(TimeUnit.valueOf(optionValue)))
-                {
-                    throw new ConfigurationException(String.format("%s is not valid for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_UNIT_KEY));
-                }
-            }
-
-            TimeUnit delayUnit = optionValue == null ? timeWindowOptions.sstableWindowUnit : TimeUnit.valueOf(optionValue);
-            // convert to seconds
-            tombstoneDelay = TimeUnit.SECONDS.convert(tombstoneDelay, delayUnit);
-        }
-        catch (IllegalArgumentException e)
-        {
-            throw new ConfigurationException(String.format("%s is not valid for %s", optionValue, TOMBSTONE_COMPACTION_DELAY_UNIT_KEY), e);
-        }
-
-        // window sizes have been validated. Check for divisiblity
-
-        compactionWindowSize = TimeUnit.SECONDS.convert(timeWindowOptions.sstableWindowSize, timeWindowOptions.sstableWindowUnit);
-
-        if (tombstoneDelay < compactionWindowSize || tombstoneDelay % compactionWindowSize != 0)
-        {
-            throw new ConfigurationException(String.format(
-                    "%s should be more than and divisible by %s when converted to seconds", TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, TOMBSTONE_COMPACTION_DELAY_KEY));
-        }
-
-
-        optionValue = options.get(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY);
+        String optionValue = options.get(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY);
         try
         {
             Pair<Long, Double> threshold = parseSizeThreshold(optionValue);
@@ -151,8 +94,25 @@ final class TimeOrderedKeyCompactionStrategyOptions
             throw new ConfigurationException(String.format("%s is not a parsable for %s", optionValue, GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY), e);
         }
 
-        uncheckedOptions.remove(TOMBSTONE_COMPACTION_DELAY_UNIT_KEY);
-        uncheckedOptions.remove(TOMBSTONE_COMPACTION_DELAY_KEY);
+        optionValue = options.get(SPLIT_FACTOR_KEY);
+        if (optionValue != null)
+        {
+            try
+            {
+                int splitFactor = Integer.parseInt(optionValue);
+                // there should be a split i.e. split > 1. split factor shouldnt be too large.
+                if (splitFactor < 2 || splitFactor > 128)
+                {
+                    throw new ConfigurationException(String.format("%d should be in the range [2, 128] for %s", splitFactor, SPLIT_FACTOR_KEY));
+                }
+            }
+            catch (NumberFormatException e)
+            {
+                throw new ConfigurationException(String.format("%s is not parsable for %s", optionValue, SPLIT_FACTOR_KEY));
+            }
+        }
+
+        uncheckedOptions.remove(SPLIT_FACTOR_KEY);
         uncheckedOptions.remove(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY);
         uncheckedOptions.remove(GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY);
 
@@ -161,7 +121,8 @@ final class TimeOrderedKeyCompactionStrategyOptions
 
     private static Pair<Long, Double> parseSizeThreshold(String option)
     {
-        if(option == null || option.isEmpty()) {
+        if (option == null || option.isEmpty())
+        {
             return DEFAULT_GARBAGE_SIZE_THRESHOLD;
         }
 

@@ -17,22 +17,22 @@
  */
 package org.apache.cassandra.db.compaction;
 
-import com.google.common.collect.Iterables;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.compaction.TimeOrderedKeyCompactionStrategy.SSTableStats;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.CompactionParams;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.TimeWindow;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -70,8 +70,7 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         Map<String, String> options = new HashMap<>();
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, "1");
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY, "MINUTES");
-        options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_KEY, "1");
-        options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_UNIT_KEY, "MINUTES");
+        options.put(TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY, "10");
         options.put(TimeOrderedKeyCompactionStrategyOptions.WINDOW_GARBAGE_SIZE_THRESHOLD_KEY, "30,100");
         options.put(TimeOrderedKeyCompactionStrategyOptions.GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY, "30,100");
 
@@ -123,54 +122,33 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
 
         try
         {
-            options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_KEY, "0");
+            options.put(TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY, "0");
             validateOptions(options);
-            fail(String.format("%s == 0 should be rejected", TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_KEY));
+            fail(String.format("%s == 0 should be rejected", TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY));
         }
         catch (ConfigurationException e)
         {
-            options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_KEY, "1");
         }
 
         try
         {
-            options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_KEY, "-1");
+            options.put(TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY, "10000000");
             validateOptions(options);
-            fail(String.format("%s == -1 should be rejected", TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_KEY));
+            fail(String.format("%s == 10000000 should be rejected", TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY));
         }
         catch (ConfigurationException e)
         {
-            options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_KEY, "1");
+            options.put(TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY, "1");
         }
 
-        String[] validUnits = {"MINUTES", "HOURS", "DAYS"};
-        String[] invalidUnits = {"SECONDS", "MONTHS", "YEARS", "RANDOM"};
-
-        for (String valid : validUnits)
+        try
         {
-            try
-            {
-                options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_UNIT_KEY, valid);
-                validateOptions(options);
-            }
-            catch (Exception e)
-            {
-                fail(String.format("%s == %s should not be rejected", TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_UNIT_KEY, valid));
-            }
+            options.put(TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY, "10");
+            validateOptions(options);
         }
-
-        for (String invalid : invalidUnits)
+        catch (ConfigurationException e)
         {
-            try
-            {
-                options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_UNIT_KEY, invalid);
-                validateOptions(options);
-                fail(String.format("%s == %s should be rejected", TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_UNIT_KEY, invalid));
-            }
-            catch (ConfigurationException e)
-            {
-                options.put(TimeOrderedKeyCompactionStrategyOptions.TOMBSTONE_COMPACTION_DELAY_UNIT_KEY, "MINUTES");
-            }
+            fail(String.format("%s == 10 should not be rejected", TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY));
         }
 
         String[] validThresholds = {"1,0.01", "50,50", "10000,100"};
@@ -222,14 +200,14 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         long ts8 = epoch("2019-08-10 13:01:01");
         long ts9 = epoch("2019-08-10 13:01:00");
 
-        Assert.assertEquals(pair(epoch("2019-08-09 13:01:00"), 1), TimeOrderedKeyCompactionStrategy.rangeToWindow(ts1, ts2, 60));
-        Assert.assertEquals(pair(epoch("2019-08-09 13:01:00"), 3), TimeOrderedKeyCompactionStrategy.rangeToWindow(ts1, ts3, 30));
-        Assert.assertEquals(pair(epoch("2019-08-09 13:01:00"), 8), TimeOrderedKeyCompactionStrategy.rangeToWindow(ts1, ts4, 15));
-        Assert.assertEquals(pair(epoch("2019-08-09 13:01:00"), 120), TimeOrderedKeyCompactionStrategy.rangeToWindow(ts1, ts5, 30));
-        Assert.assertEquals(pair(epoch("2019-08-09 13:01:00"), 59 + 60 * 5), TimeOrderedKeyCompactionStrategy.rangeToWindow(ts1, ts6, 60));
-        Assert.assertEquals(pair(epoch("2019-08-09 13:00:00"), 60 * 11 / 2), TimeOrderedKeyCompactionStrategy.rangeToWindow(ts1, ts7, 120));
-        Assert.assertEquals(pair(epoch("2019-08-09 13:00:00"), 60 * 24 / 4 + 1), TimeOrderedKeyCompactionStrategy.rangeToWindow(ts1, ts8, 240));
-        Assert.assertEquals(pair(epoch("2019-08-09 12:56:00"), 60 * 24 / 8 + 1), TimeOrderedKeyCompactionStrategy.rangeToWindow(ts1, ts9, 480));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 1), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts2, 60));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 3), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts3, 30));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 8), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts4, 15));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 120), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts5, 30));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 59 + 60 * 5), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts6, 60));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), 60 * 11 / 2), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts7, 120));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), 60 * 24 / 4 + 1), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts8, 240));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 12:56:00"), 60 * 24 / 8 + 1), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts9, 480));
     }
 
     private long epoch(String str)
@@ -237,14 +215,9 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         return LocalDateTime.parse(str, f).toEpochSecond(ZoneOffset.UTC);
     }
 
-    private Pair<Long, Long> pair(long v1, long v2)
-    {
-        return Pair.create(v1, v2);
-    }
-
-
     @Test
-    public void testMetadata() {
+    public void testMetadata()
+    {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF_STANDARD1);
         cfs.truncateBlocking();
@@ -321,26 +294,21 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         Assert.assertEquals(2, cfs.getLiveSSTables().size());
 
         List<SSTableReader> files = sort(cfs.getLiveSSTables());
-        SSTableReader data = files.get(0), tombstone = files.get(1);
+        SSTableStats data = new SSTableStats(files.get(0)), tombstone = new SSTableStats(files.get(1));
 
         // get the compaction task
         TimeOrderedKeyCompactionStrategy compactionStrategy = new TimeOrderedKeyCompactionStrategy(cfs, TOKCSUtil.getDefaultTOKCSOptions());
 
-        List<SSTableReader> expired = compactionStrategy.getFullyExpiredSStables(cfs.getLiveSSTables(), FBUtilities.nowInSeconds());
-        Assert.assertEquals(Collections.singletonList(tombstone), expired);
+        TimeOrderedKeyCompactionStrategy.CategorizedSSTables categorized = compactionStrategy.categorizeSStables(cfs.getLiveSSTables(), FBUtilities.nowInSeconds());
+        Assert.assertEquals(Collections.singletonList(tombstone), categorized.expiredTombstones);
+        Assert.assertEquals(Collections.singletonList(data), categorized.data);
+        Assert.assertEquals(Collections.emptyList(), categorized.nearExpiryTombstones);
+        Assert.assertEquals(Collections.emptyList(), categorized.latestTombstones);
 
-        TimeOrderedKeyCompactionStrategy.SSTablesStats stats = compactionStrategy.buildPerWindowSStablesStats(cfs, expired, 60);
-        compactionStrategy.populateGlobalStats(cfs, stats);
+        // 1 minute window
+        assertEquals(60, TimeWindow.merge(data.timeWindow, tombstone.timeWindow).duration);
 
-        // 1 window
-        assertEquals(1, stats.windowedStats.size());
-
-        // sstables
-        TimeOrderedKeyCompactionStrategy.WindowedSStablesStats windowStats = stats.windowedStats.get(0L);
-        assertEquals(Collections.singletonList(tombstone), windowStats.tombstoneSStables);
-        assertEquals(Collections.singletonList(data), windowStats.dataSStables);
-
-        double garbagePercent = (double)windowStats.estimatedGarbage * 100.0 / windowStats.dataSizeOnDisk;
+        double garbagePercent = TimeOrderedKeyCompactionStrategy.getEstimatedGarbage(categorized.stats) * 100.0 / categorized.stats.onDiskLength;
 
         assertTrue(garbagePercent >= minGarbagePct);
         assertTrue(garbagePercent <= maxGarbagePct);
@@ -411,18 +379,17 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         assertSame(TimeOrderedKeyCompactionStrategy.SSTablesForCompaction.EMPTY, candidate);
 
         // Case 2: with gcBefore to ALL, window1 should be chosen as it has most garbage
-        candidate = compactionStrategy.getSSTablesForCompaction(CompactionManager.GC_ALL, new ArrayList<>(tombstones));
+        candidate = compactionStrategy.getNextBackgroundSSTables(CompactionManager.GC_ALL);
         Set<SSTableReader> expectedWindow1 = cfs.getLiveSSTables().stream().filter(s -> s.getSSTableMetadata().minKey < 60000).collect(Collectors.toSet());
 
         assertEquals(expectedWindow1, new HashSet<>(candidate.sstables));
         assertFalse(candidate.tombstoneMerge);
-        assertTrue(candidate.splitSStable);
+        assertTrue(candidate.splitSSTable);
 
-        Set<SSTableReader> remainingTombstones = new HashSet<>(tombstones);
-        remainingTombstones.removeAll(candidate.sstables);
+        candidate.sstables.forEach(s -> compactionStrategy.removeSSTable(s));
 
         // Case 3: check for remaining sstable now.
-        candidate = compactionStrategy.getSSTablesForCompaction(CompactionManager.GC_ALL, new ArrayList<>(remainingTombstones));
+        candidate = compactionStrategy.getNextBackgroundSSTables(CompactionManager.GC_ALL);
 
         // last data sstable has the data that is not deleted
         SSTableReader lastDataSSTable = Util.dataOnly(cfs.getLiveSSTables()).stream().max(Comparator.comparingLong(s -> s.maxDataAge)).get();
@@ -432,6 +399,6 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
 
         assertEquals(expectedWindow2, new HashSet<>(candidate.sstables));
         assertFalse(candidate.tombstoneMerge);
-        assertTrue(candidate.splitSStable);
+        assertTrue(candidate.splitSSTable);
     }
 }

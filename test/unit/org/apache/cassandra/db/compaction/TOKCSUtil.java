@@ -92,28 +92,33 @@ public class TOKCSUtil
 
     public static Map<String, String> getDefaultTOKCSOptions()
     {
-        return getTOKCSOptions("128,50", "1024,50", 1);
+        return getTOKCSOptions("128,50", "1024,50", 1, 8);
     }
 
-    public static Map<String, String> getTOKCSOptions(String windowGarbageThreshold, String globalGarbageThreshold, int compactionWindowSize) {
+    public static Map<String, String> getTOKCSOptions(String windowGarbageThreshold, String globalGarbageThreshold, int compactionWindowSize, int splitFactor)
+    {
         Map<String, String> options = new HashMap<>();
         options.put(TimeOrderedKeyCompactionStrategyOptions.WINDOW_GARBAGE_SIZE_THRESHOLD_KEY, windowGarbageThreshold);
         options.put(TimeOrderedKeyCompactionStrategyOptions.GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY, globalGarbageThreshold);
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, String.valueOf(compactionWindowSize));
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY, "MINUTES");
+        options.put(TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY, String.valueOf(splitFactor));
+        options.put("log_all", "true");
         return options;
     }
 
-    public static String getCQLFramgentForTOKCS(String threshold, int gcGraceSec)
+    public static String getCQLFramgentForTOKCS(String threshold, int gcGraceSec, int splitFactor)
     {
         return String.format("WITH compaction = {" +
                 "'class':'org.apache.cassandra.db.compaction.TimeOrderedKeyCompactionStrategy', " +
                 "'compaction_window_unit':'MINUTES', " +
                 "'compaction_window_size':'1', " +
                 "'window_garbage_size_threshold':'%s', " +
-                "'global_garbage_size_threshold':'%s'" +
+                "'global_garbage_size_threshold':'%s'," +
+                "'split_factor': '%s'," +
+                "'log_all': 'true'" +
                 "} " +
                 "AND time_ordered_key = true " +
-                "AND gc_grace_seconds = %d", threshold, threshold, gcGraceSec);
+                "AND gc_grace_seconds = %d", threshold, threshold, splitFactor, gcGraceSec);
     }
 }
