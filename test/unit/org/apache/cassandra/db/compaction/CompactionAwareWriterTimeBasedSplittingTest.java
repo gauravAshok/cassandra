@@ -73,7 +73,7 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
         populate(rowCount);
         LifecycleTransaction txn = cfs.getTracker().tryModify(cfs.getLiveSSTables(), OperationType.COMPACTION);
         long beforeSize = txn.originals().iterator().next().onDiskLength();
-        CompactionAwareWriter writer = new TimeBasedSplittingCompactionWriter(cfs, cfs.getDirectories(), txn, txn.originals(), false, 60, 0, rowCount / 60 + 1, 0, 3);
+        CompactionAwareWriter writer = new TimeBasedSplittingCompactionWriter(cfs, cfs.getDirectories(), txn, txn.originals(), false, 60_000, 0, 3);
 
         int rows = compact(cfs, txn, writer);
         long expectedSize = beforeSize * 60 / rowCount;

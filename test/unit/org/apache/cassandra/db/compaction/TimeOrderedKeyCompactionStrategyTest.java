@@ -200,19 +200,19 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         long ts8 = epoch("2019-08-10 13:01:01");
         long ts9 = epoch("2019-08-10 13:01:00");
 
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 1), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts2, 60));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 3), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts3, 30));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 8), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts4, 15));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 120), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts5, 30));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 59 + 60 * 5), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts6, 60));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), 60 * 11 / 2), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts7, 120));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), 60 * 24 / 4 + 1), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts8, 240));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 12:56:00"), 60 * 24 / 8 + 1), TimeOrderedKeyCompactionStrategy.toWindow(ts1, ts9, 480));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 1_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts2, 60_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 3_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts3, 30_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 8_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts4, 15_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 120_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts5, 30_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), (59 + 60 * 5) * 1000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts6, 60_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), (60 * 11 / 2) * 1000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts7, 120_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), (60 * 24 / 4 + 1) * 1000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts8, 240_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 12:56:00"), (60 * 24 / 8 + 1) * 1000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts9, 480_000));
     }
 
     private long epoch(String str)
     {
-        return LocalDateTime.parse(str, f).toEpochSecond(ZoneOffset.UTC);
+        return LocalDateTime.parse(str, f).toEpochSecond(ZoneOffset.UTC) * 1000;
     }
 
     @Test
@@ -306,7 +306,7 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         Assert.assertEquals(Collections.emptyList(), categorized.latestTombstones);
 
         // 1 minute window
-        assertEquals(60, TimeWindow.merge(data.timeWindow, tombstone.timeWindow).duration);
+        assertEquals(60, TimeWindow.merge(data.timeWindowMs, tombstone.timeWindowMs).duration);
 
         double garbagePercent = TimeOrderedKeyCompactionStrategy.getEstimatedGarbage(categorized.stats) * 100.0 / categorized.stats.onDiskLength;
 

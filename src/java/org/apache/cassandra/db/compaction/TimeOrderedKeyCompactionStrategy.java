@@ -31,7 +31,6 @@ import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.schema.CompactionParams;
 import org.apache.cassandra.utils.ComparablePair;
-import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.TimeWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -195,7 +194,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         candidateStream = isTooMuchGarbage(globalSizeOnDisk, globalGarbage, true)
                 ? candidateStream
                 : candidateStream.filter(c -> isTooMuchGarbage(c.stats.onDiskLength, c.estimatedGarbage, false));
-        Optional<DataCompactionCandidate> candidate = candidateStream.max(Comparator.comparingLong(c -> c.stats.onDiskLength));
+        Optional<DataCompactionCandidate> candidate = candidateStream.max(Comparator.comparingDouble(c -> c.estimatedGarbage));
 
         if (!candidate.isPresent())
         {
@@ -206,30 +205,32 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         List<SSTableStats> maxGarbageData = candidate.get().data;
         OverlappingSet maxGarbageTombstones = candidate.get().tombstones;
 
-        TimeWindow dataSSTableTimeWindow = TimeWindow.merge(maxGarbageData.stream().map(s -> s.timeWindow).collect(Collectors.toList()));
+        TimeWindow dataSSTableTimeWindowMs = TimeWindow.merge(maxGarbageData.stream().map(s -> s.timeWindowMs).collect(Collectors.toList()));
         if (logger.isDebugEnabled())
         {
-            logger.debug("{}: candidate: {}, data_tw: {}", tableName, candidate.get(), dataSSTableTimeWindow);
+            logger.debug("{}: candidate: {}, data_tw: {}", tableName, candidate.get(), dataSSTableTimeWindowMs);
         }
 
         // If there are too many files OR (data size is over the threshold and the data set is too wide),
         // we need a sure shot way of reducing them.
-        if (maxGarbageTombstones.sstables.size() + maxGarbageData.size() > getMaxFileCountForCompaction() || dataSSTableTimeWindow.duration > 2 * getWindowSizeInSec())
+        if (maxGarbageTombstones.sstables.size() + maxGarbageData.size() > getMaxFileCountForCompaction() || dataSSTableTimeWindowMs.duration > 2 * getWindowSizeInMs())
         {
-            if (maxGarbageTombstones.timeWindow.duration > 2 * getWindowSizeInSec() || maxGarbageTombstones.sstables.size() > 1)
+            if (maxGarbageTombstones.timeWindowMs.duration > 2 * getWindowSizeInMs() || maxGarbageTombstones.sstables.size() > 1)
             {
                 logger.debug("{}: too many tombstone files", tableName);
                 return Optional.of(new SSTablesForCompaction(toSSTableReader(maxGarbageTombstones.sstables), true, true));
             }
+
             List<OverlappingSet> overlappingDataSets = getDistinctOverlappingSSTables(maxGarbageData);
-            int windowSz = getWindowSizeInSec();
+            long windowSzInMs = getWindowSizeInMs();
 
             logger.debug("{}: too many data files", tableName);
-            // we have many overlapping data sets.
-            // we would like to merge all those files that are overlapping and are in a single compaction window.
+            // we are here, which means that tombstone.timerange <= 2 * window && tombstone.size() <= 1, and there could be too many data files.
+            // data files could be too wide or many small files.
+            // we would like to merge all those files that are overlapping or are in a single compaction window.
             return overlappingDataSets.stream()
                     // group them by compaction window
-                    .collect(Collectors.groupingBy(s -> toWindow(s.timeWindow.ts, windowSz)))
+                    .collect(Collectors.groupingBy(s -> toWindowMs(s.timeWindowMs.ts, windowSzInMs)))
                     .values().stream()
                     // flatten all the sstables present in all of the overlapping sets lying in this compaction window
                     .map(v -> v.stream()
@@ -265,7 +266,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         // If nearExpiry tombstones are overlapping too much or if they are wide, merge & split them.
         for (OverlappingSet os : mergeableNearExpiryTombstones)
         {
-            if (os.maxOverlap > 1 || os.timeWindow.duration > 2 * getWindowSizeInSec())
+            if (os.maxOverlap > 1 || os.timeWindowMs.duration > 2 * getWindowSizeInMs())
             {
                 logger.debug("{}: merging near expiry tombstone files", tableName);
                 return Optional.of(new SSTablesForCompaction(toSSTableReader(limit(maxFileForCompaction, os.sstables)), true, true));
@@ -328,28 +329,28 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         sstables.remove(sstable);
     }
 
-    static TimeWindow getTimeWindow(SSTableReader ssTableReader, int windowSizeInSec)
+    public static TimeWindow getTimeWindowMs(SSTableReader ssTableReader, long windowSizeInMs)
     {
         StatsMetadata metadata = ssTableReader.getSSTableMetadata();
-        return toWindow(metadata.minKey / 1000, metadata.maxKey / 1000, windowSizeInSec);
+        return toWindowMs(metadata.minKey, metadata.maxKey, windowSizeInMs);
     }
 
-    static TimeWindow toWindow(long tsStartInclusiveInSec, long tsEndExlusiveInSec, int windowSizeInSec)
+    static TimeWindow toWindowMs(long tsStartInclusiveInMs, long tsEndExlusiveInMs, long windowSizeInMs)
     {
-        long lowerWindowBound = toWindow(tsStartInclusiveInSec, windowSizeInSec);
-        long upperWindowBound = toWindow(tsEndExlusiveInSec, windowSizeInSec) + (tsEndExlusiveInSec % windowSizeInSec == 0 ? 0 : windowSizeInSec);
+        long lowerWindowBound = toWindowMs(tsStartInclusiveInMs, windowSizeInMs);
+        long upperWindowBound = toWindowMs(tsEndExlusiveInMs, windowSizeInMs) + (tsEndExlusiveInMs % windowSizeInMs == 0 ? 0 : windowSizeInMs);
 
-        return new TimeWindow(lowerWindowBound, (int) (upperWindowBound - lowerWindowBound));
+        return new TimeWindow(lowerWindowBound, upperWindowBound - lowerWindowBound);
     }
 
-    static long toWindow(long timeInSec, int windowSizeInSec)
+    static long toWindowMs(long timeInMs, long windowSizeMs)
     {
-        return (timeInSec / windowSizeInSec) * windowSizeInSec;
+        return (timeInMs / windowSizeMs) * windowSizeMs;
     }
 
     private void updateEstimatedCompactionsByTasks(Iterable<SSTableReader> sstables)
     {
-        int windowSize = getWindowSizeInSec();
+        long windowSizeMs = getWindowSizeInMs();
 
         Set<Long> tWindowSet = new HashSet<>();
         Set<Long> dWindowSet = new HashSet<>();
@@ -357,14 +358,14 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
         for (SSTableReader sstable : sstables)
         {
-            TimeWindow tw = getTimeWindow(sstable, windowSize);
+            TimeWindow tw = getTimeWindowMs(sstable, windowSizeMs);
             if (sstable.getSSTableLevel() == SSTable.DATA_SSTABLE_LVL)
             {
-                dWindowOccupancy += collectOccupacyStat(dWindowSet, windowSize, tw);
+                dWindowOccupancy += collectOccupacyStat(dWindowSet, windowSizeMs, tw);
             }
             else
             {
-                tWindowOccupancy += collectOccupacyStat(tWindowSet, windowSize, tw);
+                tWindowOccupancy += collectOccupacyStat(tWindowSet, windowSizeMs, tw);
             }
         }
 
@@ -373,11 +374,11 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         this.estimatedRemainingTasks = n;
     }
 
-    private static int collectOccupacyStat(Set<Long> windowSet, int windowSize, TimeWindow tw)
+    private static long collectOccupacyStat(Set<Long> windowSet, long windowSizeMs, TimeWindow tw)
     {
         long endTs = tw.getEndTs();
-        for (long ts = tw.ts; ts < endTs; ts += windowSize) windowSet.add(ts);
-        return tw.getWindowLength(windowSize);
+        for (long ts = tw.ts; ts < endTs; ts += windowSizeMs) windowSet.add(ts);
+        return tw.getWindowLength(windowSizeMs);
     }
 
     @Override
@@ -441,8 +442,10 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
     public String toString()
     {
-        // TODO: add important options here.
-        return "TimeOrderedKeyCompactionStrategy";
+        return String.format("TimeOrderedKeyCompactionStrategy{window:%d sec, split:%d, local:%dMB/%f%%, global:%dMB/%f%%}",
+                getWindowSizeInMs() / 1000, options.splitFactor,
+                options.windowCompactionSizeInMB, options.windowCompactionSizePercent,
+                options.windowCompactionGlobalSizeInMB, options.windowCompactionGlobalSizePercent);
     }
 
     @Override
@@ -451,9 +454,9 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         return false;
     }
 
-    private int getWindowSizeInSec()
+    private long getWindowSizeInMs()
     {
-        return (int) TimeUnit.SECONDS.convert(twcsOptions.sstableWindowSize, twcsOptions.sstableWindowUnit);
+        return TimeUnit.MILLISECONDS.convert(twcsOptions.sstableWindowSize, twcsOptions.sstableWindowUnit);
     }
 
     static class SSTablesForCompaction
@@ -513,12 +516,12 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         }
     }
 
-    private boolean isTooMuchGarbage(double totalSizeOnDiskBytes, double garbageInBytes, boolean global)
+    private boolean isTooMuchGarbage(double totalSizeOnDiskBytes, double garbageBytes, boolean global)
     {
         double percentage = global ? options.windowCompactionGlobalSizePercent : options.windowCompactionSizePercent;
         double absolute = global ? options.windowCompactionGlobalSizeInMB : options.windowCompactionSizeInMB;
         double threshold = Double.min(totalSizeOnDiskBytes * (percentage / 100.0), absolute * FileUtils.ONE_MB);
-        return garbageInBytes >= threshold;
+        return garbageBytes >= threshold;
     }
 
     private static class TombstoneCounts
@@ -577,9 +580,9 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
     CategorizedSSTables categorizeSStables(Iterable<SSTableReader> sstables, int gcBefore)
     {
-        int gcGraceSeconds = Math.max(1, cfs.metadata.params.gcGraceSeconds);
-        long now = FBUtilities.nowInSeconds();
-        long currentGcWindow = toWindow(now, gcGraceSeconds);
+        int gcGraceSecondsMs = Math.max(1, cfs.metadata.params.gcGraceSeconds) * 1000;
+        long nowMs = System.currentTimeMillis();
+        long currentGcWindowMs = toWindowMs(nowMs, gcGraceSecondsMs);
 
         // tombstone sstables that have expired and now can be compacted with data sstables to free up space.
         List<SSTableStats> compactableTombstones = new ArrayList<>(Iterables.size(sstables));
@@ -593,11 +596,12 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         OverallStats overallStats = new OverallStats();
         sstables.forEach(s -> {
             SSTableStats stats = getOrCompute(s);
-            // TODO: Important. collect stats separately for data & tombstones.
             collect(overallStats, stats);
             if (s.getSSTableLevel() == SSTable.TOMBSTONE_SSTABLE_LVL)
             {
-                if (toWindow(s.getSSTableMetadata().maxLocalDeletionTime, gcGraceSeconds) >= currentGcWindow)
+                // If gcGraceSeconds > 0, i.e. tombstones will linger in sstables for some time and if they are created recently,
+                // mark them as latest so that they are not compacted against data sstables just yet.
+                if (cfs.metadata.params.gcGraceSeconds > 0 && toWindowMs(s.getSSTableMetadata().maxLocalDeletionTime * 1000, gcGraceSecondsMs) >= currentGcWindowMs)
                 {
                     latestTombstones.add(stats);
                 }
@@ -626,7 +630,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         final long keyCount;
         final long rowCount;
         final TombstoneCounts tombstoneCounts;
-        final TimeWindow timeWindow;
+        final TimeWindow timeWindowMs;
 
         public SSTableStats(SSTableReader sstable)
         {
@@ -656,7 +660,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                 this.keyCount = sstable.estimatedKeys();
             }
             this.rowCount = sstable.getTotalRows();
-            this.timeWindow = new TimeWindow(meta.minKey, (int) (meta.maxKey - meta.minKey));
+            this.timeWindowMs = new TimeWindow(meta.minKey, (int) (meta.maxKey - meta.minKey));
         }
 
         @Override
@@ -683,7 +687,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                     ", keyCount=" + keyCount +
                     ", rowCount=" + rowCount +
                     ", tombstoneCounts=" + tombstoneCounts +
-                    ", timeWindow=" + timeWindow +
+                    ", timeRange=" + timeWindowMs + " ms" +
                     '}';
         }
     }
@@ -740,14 +744,14 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
     static class OverlappingSet
     {
         List<SSTableStats> sstables = new ArrayList<>();
-        TimeWindow timeWindow;
+        TimeWindow timeWindowMs;
         int maxOverlap;
 
         @Override
         public String toString()
         {
             return "OverlappingSet{" +
-                    "timeWindow=" + timeWindow +
+                    "timeWindow=" + timeWindowMs + " ms" +
                     ", maxOverlap=" + maxOverlap +
                     ", sstables=" + idWithTimeRange(sstables) +
                     '}';
@@ -771,7 +775,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
         public static DataCompactionCandidate get(List<SSTableStats> allData, OverlappingSet tombstones)
         {
-            List<SSTableStats> overlappingData = getOverlappingSSTables(tombstones.timeWindow, allData);
+            List<SSTableStats> overlappingData = getOverlappingSSTables(tombstones.timeWindowMs, allData);
             OverallStats stats = new OverallStats();
             for (SSTableStats ss : tombstones.sstables) collect(stats, ss);
             for (SSTableStats ss : overlappingData) collect(stats, ss);
@@ -808,8 +812,8 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         for (int i = 0; i < sstables.size(); ++i)
         {
             SSTableStats s = sstables.get(i);
-            timeboundaries.add(new TimeBoundary(i, s.timeWindow.ts, true));
-            timeboundaries.add(new TimeBoundary(i, s.timeWindow.getEndTs(), false));
+            timeboundaries.add(new TimeBoundary(i, s.timeWindowMs.ts, true));
+            timeboundaries.add(new TimeBoundary(i, s.timeWindowMs.getEndTs(), false));
         }
         Collections.sort(timeboundaries);
 
@@ -839,7 +843,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                 end = Long.max(end, tb.left);
                 if (currOverlap == -1)
                 {
-                    currentSet.timeWindow = new TimeWindow(start, (int) (end - start));
+                    currentSet.timeWindowMs = new TimeWindow(start, (int) (end - start));
                     sets.add(currentSet);
 
                     // reset
@@ -864,8 +868,8 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         for (int i = 0; i < sstables.size(); ++i)
         {
             SSTableStats s = sstables.get(i);
-            timeboundaries.add(new TimeBoundary(i, s.timeWindow.ts, true));
-            timeboundaries.add(new TimeBoundary(i, s.timeWindow.getEndTs(), false));
+            timeboundaries.add(new TimeBoundary(i, s.timeWindowMs.ts, true));
+            timeboundaries.add(new TimeBoundary(i, s.timeWindowMs.getEndTs(), false));
         }
         Collections.sort(timeboundaries);
 
@@ -896,9 +900,9 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         return maxOverlappingSet.stream().map(sstables::get).collect(Collectors.toList());
     }
 
-    static List<SSTableStats> getOverlappingSSTables(TimeWindow timeWindow, List<SSTableStats> sstables)
+    static List<SSTableStats> getOverlappingSSTables(TimeWindow timeWindowMs, List<SSTableStats> sstables)
     {
-        return sstables.stream().filter(s -> s.timeWindow.intersects(timeWindow)).collect(Collectors.toList());
+        return sstables.stream().filter(s -> s.timeWindowMs.intersects(timeWindowMs)).collect(Collectors.toList());
     }
 
     static List<SSTableReader> toSSTableReader(List<SSTableStats>... stats)

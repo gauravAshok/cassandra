@@ -25,15 +25,13 @@ import org.apache.cassandra.db.compaction.writers.TimeBasedSplittingCompactionWr
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
-import org.apache.cassandra.utils.TimeWindow;
 
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 public class TimeOrderedKeyCompactionTask extends CompactionTask
 {
-    private final int windowSizeInSec;
+    private final long windowSizeInMs;
     private final boolean splitExpected;
     private final boolean tombstoneOnlyMerge;
     private final int splitFactor;
@@ -42,7 +40,7 @@ public class TimeOrderedKeyCompactionTask extends CompactionTask
                                         boolean splitExpected, boolean tombstoneOnlyMerge)
     {
         super(cfs, txn, gcBefore);
-        this.windowSizeInSec = (int) TimeUnit.SECONDS.convert(options.twcsOptions.sstableWindowSize, options.twcsOptions.sstableWindowUnit);
+        this.windowSizeInMs = TimeUnit.MILLISECONDS.convert(options.twcsOptions.sstableWindowSize, options.twcsOptions.sstableWindowUnit);
         this.splitExpected = splitExpected;
         this.tombstoneOnlyMerge = tombstoneOnlyMerge;
         this.splitFactor = options.splitFactor;
@@ -54,13 +52,7 @@ public class TimeOrderedKeyCompactionTask extends CompactionTask
     {
         if (splitExpected)
         {
-            TimeWindow tw = TimeWindow.merge(
-                    transaction.originals().stream()
-                            .map(s -> TimeOrderedKeyCompactionStrategy.getTimeWindow(s, windowSizeInSec))
-                            .collect(Collectors.toList()));
-
-            return new TimeBasedSplittingCompactionWriter(
-                    cfs, directories, txn, nonExpiredSSTables, false, windowSizeInSec, tw.ts, tw.getWindowLength(windowSizeInSec), getLevel(), splitFactor);
+            return new TimeBasedSplittingCompactionWriter(cfs, directories, txn, nonExpiredSSTables, false, windowSizeInMs, getLevel(), splitFactor);
         }
 
         // if split is not expected, we are just looking at normal compaction between sstables

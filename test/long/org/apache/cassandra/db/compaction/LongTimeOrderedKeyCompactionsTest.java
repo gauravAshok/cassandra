@@ -88,7 +88,6 @@ public class LongTimeOrderedKeyCompactionsTest
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard1");
 
         store.enableAutoCompaction(true);
-        Assert.assertEquals(0, store.getCompactionStrategyManager().getEstimatedRemainingTasks());
         Assert.assertEquals(1, store.getLiveSSTables().size());
     }
 
@@ -106,7 +105,6 @@ public class LongTimeOrderedKeyCompactionsTest
         int beforeSStables = store.getLiveSSTables().size();
 
         store.enableAutoCompaction(true);
-        Assert.assertEquals(1, store.getCompactionStrategyManager().getEstimatedRemainingTasks());
         Assert.assertEquals(beforeSStables, store.getLiveSSTables().size());
     }
 

@@ -22,20 +22,20 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Time window representing a time range [ts, ts + duration)
+ * Time window representing a range [ts, ts + duration). Use it with ms only to avoid any bugs.
  */
 public class TimeWindow
 {
     public final long ts;
-    public final int duration;
+    public final long duration;
 
-    public TimeWindow(long ts, int duration)
+    public TimeWindow(long ts, long duration)
     {
         this.ts = ts;
         this.duration = duration;
     }
 
-    public int getWindowLength(int windowSize)
+    public long getWindowLength(long windowSize)
     {
         return duration / windowSize;
     }
@@ -60,14 +60,14 @@ public class TimeWindow
             end = Long.max(end, tw.getEndTs());
         }
 
-        return new TimeWindow(begin, (int)(end - begin));
+        return new TimeWindow(begin, end - begin);
     }
 
     public static TimeWindow merge(TimeWindow tw1, TimeWindow tw2) {
         long begin = Long.min(tw1.ts, tw2.ts);
         long end = Long.max(tw1.getEndTs(), tw2.getEndTs());
 
-        return new TimeWindow(begin, (int)(end - begin));
+        return new TimeWindow(begin, end - begin);
     }
 
     @Override

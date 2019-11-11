@@ -21,23 +21,26 @@ package org.apache.cassandra.db.compaction.writers;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.Directories.DataDirectory;
+import org.apache.cassandra.db.compaction.TimeOrderedKeyCompactionStrategy;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
+import org.apache.cassandra.utils.TimeWindow;
 
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
 {
-    private final int windowSizeInSec;
+    private final long compactionWindowSizeInMs;
+    private final long windowStartInMs;
+    // length of split window in terms of compaction windows. splitWindowCount = 2 means window_size = 2 * compactionWindowSizeInMs
     private final int splitWindowCount;
-    private final long windowStartInSec;
-    private final int windowCount;
     private final int level;
+    private final int splitFactor;
     private final Set<SSTableReader> allSSTables;
     private SSTableWriter[] ssTableWriters;
     private Directories.DataDirectory sstableDirectory;
@@ -48,19 +51,23 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
             LifecycleTransaction txn,
             Set<SSTableReader> nonExpiredSSTables,
             boolean keepOriginals,
-            int windowSizeInSec,
-            long windowStartInSec,
-            int windowCount,
+            long compactionWindowSizeInMs,
             int level,
             int splitFactor)
     {
 
         super(cfs, directories, txn, nonExpiredSSTables, keepOriginals);
-        this.windowSizeInSec = windowSizeInSec;
-        this.windowStartInSec = windowStartInSec;
-        this.windowCount = windowCount;
         this.allSSTables = txn.originals();
         this.level = level;
+        this.splitFactor = splitFactor;
+
+        TimeWindow tw = TimeWindow.merge(
+                txn.originals().stream()
+                        .map(s -> TimeOrderedKeyCompactionStrategy.getTimeWindowMs(s, compactionWindowSizeInMs))
+                        .collect(Collectors.toList()));
+        this.compactionWindowSizeInMs = compactionWindowSizeInMs;
+        this.windowStartInMs = tw.ts;
+        int windowCount = (int) tw.getWindowLength(compactionWindowSizeInMs);
         this.splitWindowCount = windowCount % splitFactor == 0 ? windowCount / splitFactor : 1 + windowCount / splitFactor;
         this.ssTableWriters = new SSTableWriter[splitFactor];
     }
@@ -88,8 +95,8 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     int getWindowIndex(DecoratedKey pk)
     {
         long ts = pk.interpretTimeBucket().ts;
-        long delta = TimeUnit.SECONDS.convert(ts, TimeUnit.MILLISECONDS) - windowStartInSec;
-        int window = (int)(delta / windowSizeInSec);
+        long delta = ts - windowStartInMs;
+        int window = (int)(delta / compactionWindowSizeInMs);
         return window / splitWindowCount;
     }
 
@@ -98,7 +105,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     {
         // TODO: may have to consider the situation where directory is repeated.
         sstableDirectory = directory;
-        ssTableWriters = new SSTableWriter[windowCount];
+        ssTableWriters = new SSTableWriter[splitFactor];
     }
 
     @SuppressWarnings("resource")
@@ -106,7 +113,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     {
         return SSTableWriter.create(
                 Descriptor.fromFilename(cfs.getSSTablePath(getDirectories().getLocationForDisk(sstableDirectory))),
-                estimatedTotalKeys / windowCount,
+                estimatedTotalKeys / splitFactor,
                 minRepairedAt,
                 cfs.metadata,
                 new MetadataCollector(allSSTables, cfs.metadata.comparator, cfs.timeOrderedKey(), level),
