@@ -47,8 +47,7 @@ public class TimeWindow
     }
 
     public boolean intersects(TimeWindow tw) {
-        return (tw.ts >= this.ts && tw.ts < getEndTs()) ||
-                (tw.getEndTs() > this.ts && tw.getEndTs() <= getEndTs());
+        return tw.ts < getEndTs() && tw.getEndTs() > this.ts;
     }
 
     public static TimeWindow merge(List<TimeWindow> windows) {

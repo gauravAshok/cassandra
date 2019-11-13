@@ -92,10 +92,11 @@ public class TOKCSUtil
 
     public static Map<String, String> getDefaultTOKCSOptions()
     {
-        return getTOKCSOptions("128,50", "1024,50", 1, 8);
+        return getTOKCSOptions("128,50", "1024,50", 1, 8, 10000);
     }
 
-    public static Map<String, String> getTOKCSOptions(String windowGarbageThreshold, String globalGarbageThreshold, int compactionWindowSize, int splitFactor)
+    public static Map<String, String> getTOKCSOptions(String windowGarbageThreshold, String globalGarbageThreshold, int compactionWindowSize, int splitFactor,
+                                                      int maxSizeForCompaction)
     {
         Map<String, String> options = new HashMap<>();
         options.put(TimeOrderedKeyCompactionStrategyOptions.WINDOW_GARBAGE_SIZE_THRESHOLD_KEY, windowGarbageThreshold);
@@ -103,6 +104,7 @@ public class TOKCSUtil
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_SIZE_KEY, String.valueOf(compactionWindowSize));
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY, "MINUTES");
         options.put(TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY, String.valueOf(splitFactor));
+        options.put(TimeOrderedKeyCompactionStrategyOptions.COMPACTION_MAX_SIZE_MB, String.valueOf(maxSizeForCompaction));
         options.put("log_all", "true");
         return options;
     }

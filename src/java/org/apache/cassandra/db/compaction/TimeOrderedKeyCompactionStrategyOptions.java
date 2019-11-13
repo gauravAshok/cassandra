@@ -25,6 +25,9 @@ import java.util.Map;
 
 final class TimeOrderedKeyCompactionStrategyOptions
 {
+    protected static final String COMPACTION_MAX_SIZE_MB = "compaction_max_size_mb";
+    protected static final int DEFAULT_COMPACTION_MAX_SIZE_MB = 64000;
+
     protected static final String SPLIT_FACTOR_KEY = "split_factor";
     protected static final int DEFAULT_SPLIT_FACTOR = 8;
 
@@ -44,10 +47,10 @@ final class TimeOrderedKeyCompactionStrategyOptions
     final double windowCompactionGlobalSizePercent;
 
     final int splitFactor;
+    final int compactionMaxSizeMB;
 
     TimeOrderedKeyCompactionStrategyOptions(Map<String, String> options)
     {
-
         this.twcsOptions = new TimeWindowCompactionStrategyOptions(options);
 
         Pair<Long, Double> thresholdOption = parseSizeThreshold(options.get(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY));
@@ -60,6 +63,9 @@ final class TimeOrderedKeyCompactionStrategyOptions
 
         String splitFactorOption = options.get(SPLIT_FACTOR_KEY);
         this.splitFactor = splitFactorOption == null ? DEFAULT_SPLIT_FACTOR : Integer.parseInt(splitFactorOption);
+
+        String maxSizeOption = options.get(COMPACTION_MAX_SIZE_MB);
+        this.compactionMaxSizeMB = maxSizeOption == null ? DEFAULT_COMPACTION_MAX_SIZE_MB : Integer.parseInt(maxSizeOption);
     }
 
     public static Map<String, String> validateOptions(Map<String, String> options, Map<String, String> uncheckedOptions) throws ConfigurationException
@@ -112,6 +118,24 @@ final class TimeOrderedKeyCompactionStrategyOptions
             }
         }
 
+        optionValue = options.get(COMPACTION_MAX_SIZE_MB);
+        if (optionValue != null)
+        {
+            try
+            {
+                int compactionMaxSizeMB = Integer.parseInt(optionValue);
+                if (compactionMaxSizeMB < 1)
+                {
+                    throw new ConfigurationException(String.format("%d should be greater than 0 for %s", compactionMaxSizeMB, COMPACTION_MAX_SIZE_MB));
+                }
+            }
+            catch (NumberFormatException e)
+            {
+                throw new ConfigurationException(String.format("%s is not parsable for %s", optionValue, COMPACTION_MAX_SIZE_MB));
+            }
+        }
+
+        uncheckedOptions.remove(COMPACTION_MAX_SIZE_MB);
         uncheckedOptions.remove(SPLIT_FACTOR_KEY);
         uncheckedOptions.remove(WINDOW_GARBAGE_SIZE_THRESHOLD_KEY);
         uncheckedOptions.remove(GLOBAL_GARBAGE_SIZE_THRESHOLD_KEY);

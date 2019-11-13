@@ -17,17 +17,14 @@
  */
 package org.apache.cassandra.db.compaction;
 
+import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.UpdateBuilder;
 import org.apache.cassandra.Util;
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
-import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.io.sstable.SSTableUtils;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.CompactionParams;
 import org.apache.cassandra.schema.KeyspaceParams;
@@ -58,7 +55,8 @@ public class LongTimeOrderedKeyCompactionsTest
     public static void defineSchema() throws ConfigurationException
     {
         // 1000,50.0 means compact when (1000 MB or 50% whichever is lower) of the data is garbage.
-        Map<String, String> compactionOptions = TOKCSUtil.getTOKCSOptions("1000,50.0", "1000,50.0", 30, 3);
+        Map<String, String> compactionOptions = TOKCSUtil.getTOKCSOptions("1000,30.0", "1000,30.0", 60, 8, 1000);
+
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE1,
                 KeyspaceParams.simple(1),
@@ -86,8 +84,7 @@ public class LongTimeOrderedKeyCompactionsTest
 
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard1");
-
-        store.enableAutoCompaction(true);
+        waitForCompaction(store);
         Assert.assertEquals(1, store.getLiveSSTables().size());
     }
 
@@ -102,10 +99,9 @@ public class LongTimeOrderedKeyCompactionsTest
 
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard1");
-        int beforeSStables = store.getLiveSSTables().size();
-
-        store.enableAutoCompaction(true);
-        Assert.assertEquals(beforeSStables, store.getLiveSSTables().size());
+        Set<SSTableReader> beforeSSTables = store.getLiveSSTables();
+        waitForCompaction(store);
+        Assert.assertEquals(beforeSSTables, store.getLiveSSTables());
     }
 
     /**
@@ -118,21 +114,31 @@ public class LongTimeOrderedKeyCompactionsTest
 
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard1");
-        store.enableAutoCompaction(true);
+        Set<SSTableReader> dataforeCompaction = Util.dataOnly(store.getLiveSSTables());
+        waitForCompaction(store);
 
-        Thread.sleep(30000);
-
-        logger.info("pending tasks: {}", store.getCompactionStrategyManager().getEstimatedRemainingTasks());
-        logger.info("files after compaction: {}", store.getLiveSSTables().size());
+        Set<SSTableReader> sstables = store.getLiveSSTables();
+        Assert.assertEquals(0, Util.tombstonesOnly(sstables).size());
+        logger.info("total files : {}", sstables.size());
+        // since the total size is actually around 1.6GB, our 1gb threshold will force the tombstone to split by split factor.
+        // since there will be 8 splits. further compaction can also result in further 8 splits.
+        // Hence putting a upper bound on 64 + 8 (for some room)
+        Assert.assertTrue(sstables.size() < (64 + 8));
     }
 
-    /**
-     * Test compaction with lots of small sstables.
-     */
-    @Test
-    public void testCompactionMany() throws Exception
+    private void waitForCompaction(ColumnFamilyStore store)
     {
-        generateSStables(80000, 5, 60);
+        store.enableAutoCompaction(true);
+        CompactionManager.instance.waitForCessation(Arrays.asList(store));
+        Uninterruptibles.sleepUninterruptibly(5, TimeUnit.SECONDS);
+        while (true)
+        {
+            Uninterruptibles.sleepUninterruptibly(1, TimeUnit.SECONDS);
+            if(!CompactionManager.instance.isCompacting(Arrays.asList(store)))
+            {
+                return;
+            }
+        }
     }
 
     protected void generateSStables(int paritions, int rowsPerPartition, int deletePercent) throws Exception
@@ -145,7 +151,9 @@ public class LongTimeOrderedKeyCompactionsTest
         {
             // last sstable has highest timestamps
             for (int i = 0; i < rowsPerPartition; i++)
+            {
                 TOKCSUtil.insertStandard1(store, FBUtilities.nowInSeconds(), j, i, i + " - " + RandomStringUtils.randomAlphanumeric(4096));
+            }
         }
 
         // deletes
@@ -154,19 +162,13 @@ public class LongTimeOrderedKeyCompactionsTest
             // last sstable has highest timestamps
             for (int i = 0; i < rowsPerPartition; i++)
             {
-                if(rndm.nextInt(100) < deletePercent) {
+                if (rndm.nextInt(100) < deletePercent)
+                {
                     TOKCSUtil.deleteStandard1(store, FBUtilities.nowInSeconds(), j, i);
                 }
             }
         }
         store.forceBlockingFlush();
-    }
-
-    void logcfsState(ColumnFamilyStore store) {
-        Set<SSTableReader> sstables = store.getLiveSSTables();
-        Set<SSTableReader> data = Util.dataOnly(sstables);
-        Set<SSTableReader> tombstone = Util.tombstonesOnly(sstables);
-        logger.info("sstables={}[d:{},t:{}]", sstables.size(), data.size(), tombstone.size());
     }
 
     @Test

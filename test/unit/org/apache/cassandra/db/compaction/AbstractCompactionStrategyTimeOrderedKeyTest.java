@@ -46,7 +46,7 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.TimeOrderedKeyCFMD.standardCFMD(KEYSPACE1, TOKCS_TABLE)
-                                                .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getTOKCSOptions("0,0", "0,0", 1, 3))));
+                                                .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getTOKCSOptions("0,0", "0,0", 1, 3, 10000))));
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(TOKCS_TABLE).disableAutoCompaction();
     }
 

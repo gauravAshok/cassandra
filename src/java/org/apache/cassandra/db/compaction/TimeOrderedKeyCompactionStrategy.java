@@ -38,7 +38,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static com.google.common.collect.Iterables.filter;
@@ -133,8 +136,8 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
      * Tombstone sstables can be of 3 categories:
      * [expired, nearExpiry, latest]. See the inline documentation.
      * <p>
-     * There are 2 parameters that will affect the performance of the operations on tables with this compaction strategy.
-     * 1. Time overlap between sstables. Many files overlaping with each other -> High read latency.
+     * There are 2 parameters that will affect the performance of the operations on tables with tlatencyhis compaction strategy.
+     * 1. Time overlap between sstables. Many files overlaping with each other -> High read .
      * 2. Time range of a sstable. Large range -> large size. Likelihood of it overlapping with other sstables also increases when the range is large, which
      * will lead to larger cost in compaction. Compaction will be most efficient if there are fewer files to compact at a time.
      * <p>
@@ -206,6 +209,8 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         OverlappingSet maxGarbageTombstones = candidate.get().tombstones;
 
         TimeWindow dataSSTableTimeWindowMs = TimeWindow.merge(maxGarbageData.stream().map(s -> s.timeWindowMs).collect(Collectors.toList()));
+        long dataSizeOnDisk = maxGarbageData.stream().mapToLong(s -> s.sstable.onDiskLength()).sum();
+
         if (logger.isDebugEnabled())
         {
             logger.debug("{}: candidate: {}, data_tw: {}", tableName, candidate.get(), dataSSTableTimeWindowMs);
@@ -213,11 +218,12 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
         // If there are too many files OR (data size is over the threshold and the data set is too wide),
         // we need a sure shot way of reducing them.
-        if (maxGarbageTombstones.sstables.size() + maxGarbageData.size() > getMaxFileCountForCompaction() || dataSSTableTimeWindowMs.duration > 2 * getWindowSizeInMs())
+        if (maxGarbageTombstones.sstables.size() + maxGarbageData.size() > getMaxFileCountForCompaction() ||
+                (dataSSTableTimeWindowMs.duration > 2 * getWindowSizeInMs() && dataSizeOnDisk > options.compactionMaxSizeMB * FileUtils.ONE_MB))
         {
             if (maxGarbageTombstones.timeWindowMs.duration > 2 * getWindowSizeInMs() || maxGarbageTombstones.sstables.size() > 1)
             {
-                logger.debug("{}: too many tombstone files", tableName);
+                logger.debug("{}: too many / too wide tombstone files", tableName);
                 return Optional.of(new SSTablesForCompaction(toSSTableReader(maxGarbageTombstones.sstables), true, true));
             }
 
@@ -247,19 +253,19 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         {
             List<SSTableReader> all = new ArrayList<>(toSSTableReader(maxGarbageTombstones.sstables));
             all.addAll(toSSTableReader(maxGarbageData));
-            return Optional.of(new SSTablesForCompaction(all, false, false));
+            return Optional.of(new SSTablesForCompaction(all, false, true));
         }
     }
 
     private Optional<SSTablesForCompaction> getCompactionCandidateBasedOnOverlaps(CategorizedSSTables categorizedSSTables)
     {
         int maxFileForCompaction = getMaxFileCountForCompaction();
-        List<SSTableStats> mergeableLatestTombstones = getMaxOverlappingSSTables(categorizedSSTables.latestTombstones);
+        OverlappingSet mergeableLatestTombstones = getMaxOverlappingSSTables(categorizedSSTables.latestTombstones);
         // if latest tombstones are overlapping too much, merge them without splitting.
-        if (mergeableLatestTombstones.size() > 1)
+        if (mergeableLatestTombstones.maxOverlap > 1)
         {
             logger.debug("{}: merging latest tombstone files", tableName);
-            return Optional.of(new SSTablesForCompaction(toSSTableReader(limit(maxFileForCompaction, mergeableLatestTombstones)), true, false));
+            return Optional.of(new SSTablesForCompaction(toSSTableReader(limit(maxFileForCompaction, mergeableLatestTombstones.sstables)), true, false));
         }
 
         List<OverlappingSet> mergeableNearExpiryTombstones = getDistinctOverlappingSSTables(categorizedSSTables.nearExpiryTombstones);
@@ -273,16 +279,16 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
             }
         }
 
-        List<SSTableStats> mergeableTombstones = getMaxOverlappingSSTables(categorizedSSTables.expiredTombstones);
-        List<SSTableStats> mergeableData = getMaxOverlappingSSTables(categorizedSSTables.data);
+        OverlappingSet mergeableTombstones = getMaxOverlappingSSTables(categorizedSSTables.expiredTombstones);
+        OverlappingSet mergeableData = getMaxOverlappingSSTables(categorizedSSTables.data);
 
-        boolean mergingTombstones = mergeableTombstones.size() > mergeableData.size();
-        List<SSTableStats> mergeableSSTables = mergingTombstones ? mergeableTombstones : mergeableData;
+        boolean mergingTombstones = mergeableTombstones.sstables.size() > mergeableData.sstables.size();
+        OverlappingSet mergeableSSTables = mergingTombstones ? mergeableTombstones : mergeableData;
 
-        if (mergeableSSTables.size() > 1)
+        if ((mergingTombstones && mergeableSSTables.sstables.size() > 1) || (!mergingTombstones && mergeableSSTables.maxOverlap > 1))
         {
             logger.debug("{}: merging {} files", tableName, mergingTombstones ? "expired tombstone" : "data");
-            return Optional.of(new SSTablesForCompaction(toSSTableReader(limit(maxFileForCompaction, mergeableSSTables)), mergingTombstones, true));
+            return Optional.of(new SSTablesForCompaction(toSSTableReader(limit(maxFileForCompaction, mergeableSSTables.sstables)), mergingTombstones, true));
         }
 
         return Optional.empty();
@@ -747,6 +753,17 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         TimeWindow timeWindowMs;
         int maxOverlap;
 
+        public OverlappingSet()
+        {
+        }
+
+        public OverlappingSet(List<SSTableStats> sstables, TimeWindow timeWindowMs, int maxOverlap)
+        {
+            this.sstables = sstables;
+            this.timeWindowMs = timeWindowMs;
+            this.maxOverlap = maxOverlap;
+        }
+
         @Override
         public String toString()
         {
@@ -795,36 +812,22 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         }
     }
 
-    /**
-     * Returns a list of set that overlaps with itself. The elements in the set are in the order of ts.
-     *
-     * @param sstables
-     * @return
-     */
-    static List<OverlappingSet> getDistinctOverlappingSSTables(List<SSTableStats> sstables)
+    private static class DistinctOverlappingSSTablesState implements Consumer<TimeBoundary>
     {
-        // TODO: confirm that elements in the overlapping set are ordered by ts.
-        if (sstables.isEmpty())
+        private final List<SSTableStats> sstables;
+        private final List<OverlappingSet> sets = new ArrayList<>();
+        private OverlappingSet currentSet = new OverlappingSet();
+        private int currOverlap = -1;
+        private int maxOverlap = -1;
+        private long start = Long.MAX_VALUE;
+        private long end = Long.MIN_VALUE;
+
+        public DistinctOverlappingSSTablesState(List<SSTableStats> sstables)
         {
-            return Collections.emptyList();
+            this.sstables = sstables;
         }
-        List<TimeBoundary> timeboundaries = new ArrayList<>();
-        for (int i = 0; i < sstables.size(); ++i)
-        {
-            SSTableStats s = sstables.get(i);
-            timeboundaries.add(new TimeBoundary(i, s.timeWindowMs.ts, true));
-            timeboundaries.add(new TimeBoundary(i, s.timeWindowMs.getEndTs(), false));
-        }
-        Collections.sort(timeboundaries);
 
-        List<OverlappingSet> sets = new ArrayList<>();
-        OverlappingSet currentSet = new OverlappingSet();
-
-        int currOverlap = -1;
-        currentSet.maxOverlap = -1;
-        long start = Long.MAX_VALUE, end = Long.MIN_VALUE;
-
-        for (TimeBoundary tb : timeboundaries)
+        public void accept(TimeBoundary tb)
         {
             if (tb.isStartBoundary())
             {
@@ -832,9 +835,9 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                 start = Long.min(start, tb.left);
                 currentSet.sstables.add(sstables.get(tb.idx));
 
-                if (currOverlap > currentSet.maxOverlap)
+                if (currOverlap > maxOverlap)
                 {
-                    currentSet.maxOverlap = currOverlap;
+                    maxOverlap = currOverlap;
                 }
             }
             else
@@ -844,60 +847,80 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                 if (currOverlap == -1)
                 {
                     currentSet.timeWindowMs = new TimeWindow(start, (int) (end - start));
+                    currentSet.maxOverlap = maxOverlap;
                     sets.add(currentSet);
 
                     // reset
                     currentSet = new OverlappingSet();
+                    maxOverlap = -1;
                     start = Long.MAX_VALUE;
                     end = Long.MIN_VALUE;
-                    currentSet.maxOverlap = -1;
                 }
             }
         }
-        return sets;
     }
 
-    static List<SSTableStats> getMaxOverlappingSSTables(List<SSTableStats> sstables)
+    static <T extends Consumer<TimeBoundary>, R> R reduceOverTimeBoundaries(List<SSTableStats> sstables, T state, Function<T, R> finisher)
     {
-        if (sstables.isEmpty())
-        {
-            return Collections.emptyList();
-        }
+        IntStream
+                .range(0, sstables.size())
+                .mapToObj(i -> Stream.of(
+                        new TimeBoundary(i, sstables.get(i).timeWindowMs.ts, true),
+                        new TimeBoundary(i, sstables.get(i).timeWindowMs.getEndTs(), false)
+                ))
+                .flatMap(Function.identity())
+                .sorted()
+                .forEachOrdered(state);
 
-        List<TimeBoundary> timeboundaries = new ArrayList<>();
-        for (int i = 0; i < sstables.size(); ++i)
-        {
-            SSTableStats s = sstables.get(i);
-            timeboundaries.add(new TimeBoundary(i, s.timeWindowMs.ts, true));
-            timeboundaries.add(new TimeBoundary(i, s.timeWindowMs.getEndTs(), false));
-        }
-        Collections.sort(timeboundaries);
+        return finisher.apply(state);
+    }
 
-        List<Integer> maxOverlappingSet = new ArrayList<>();
-        int maxOverlap = -1, currOverlap = -1;
-        Set<Integer> currOverlappingSet = new HashSet<>();
+    /**
+     * Returns a list of set that overlaps with itself. The elements in the set are in the order of ts.
+     *
+     * @param sstables
+     * @return
+     */
+    static List<OverlappingSet> getDistinctOverlappingSSTables(List<SSTableStats> sstables)
+    {
+        return reduceOverTimeBoundaries(sstables, new DistinctOverlappingSSTablesState(sstables), state -> state.sets);
+    }
 
-        for (TimeBoundary tb : timeboundaries)
+    private static class MaxOverlappingSSTablesState implements Consumer<TimeBoundary>
+    {
+        private final List<Integer> set = new ArrayList<>();
+        private final Set<Integer> currentSet = new HashSet<>();
+        private int maxOverlap = -1;
+        private int currOverlap = -1;
+
+        public void accept(TimeBoundary tb)
         {
             if (tb.isStartBoundary())
             {
                 ++currOverlap;
-                currOverlappingSet.add(tb.idx);
+                currentSet.add(tb.idx);
                 if (currOverlap > maxOverlap)
                 {
                     maxOverlap = currOverlap;
-                    maxOverlappingSet.clear();
-                    maxOverlappingSet.addAll(currOverlappingSet);
+                    set.clear();
+                    set.addAll(currentSet);
                 }
             }
             else
             {
                 --currOverlap;
-                currOverlappingSet.remove(tb.idx);
+                currentSet.remove(tb.idx);
             }
         }
+    }
 
-        return maxOverlappingSet.stream().map(sstables::get).collect(Collectors.toList());
+    static OverlappingSet getMaxOverlappingSSTables(List<SSTableStats> sstables)
+    {
+        return reduceOverTimeBoundaries(sstables, new MaxOverlappingSSTablesState(), state -> {
+            List<SSTableStats> overlappingSSTables = state.set.stream().map(sstables::get).collect(Collectors.toList());
+            TimeWindow tw = TimeWindow.merge(overlappingSSTables.stream().map(s -> s.timeWindowMs).collect(Collectors.toList()));
+            return new OverlappingSet(overlappingSSTables, tw, state.maxOverlap);
+        });
     }
 
     static List<SSTableStats> getOverlappingSSTables(TimeWindow timeWindowMs, List<SSTableStats> sstables)
