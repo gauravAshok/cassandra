@@ -185,24 +185,19 @@ public class LongTimeOrderedKeyCompactionsTest
         // disable compaction while flushing
         cfs.disableAutoCompaction();
 
-        long maxTimestampExpected = Long.MIN_VALUE;
-        Set<DecoratedKey> inserted = new HashSet<DecoratedKey>();
+        long maxTimestampExpectedSec = Long.MIN_VALUE;
+        Set<DecoratedKey> inserted = new HashSet<>();
         for (int j = 0; j < SSTABLES; j++)
         {
             for (int i = 0; i < ROWS_PER_SSTABLE; i++)
             {
-                DecoratedKey key = Util.dk(String.valueOf(i % 2));
-                long timestamp = j * ROWS_PER_SSTABLE + i;
-                maxTimestampExpected = Math.max(timestamp, maxTimestampExpected);
-                UpdateBuilder.create(cfs.metadata, key)
-                        .withTimestamp(timestamp)
-                        .newRow(String.valueOf(i / 2)).add("val", ByteBufferUtil.EMPTY_BYTE_BUFFER)
-                        .apply();
-
+                long timestampSec = j * ROWS_PER_SSTABLE + i;
+                DecoratedKey key = TOKCSUtil.insertStandard1(cfs, timestampSec, i % 2, i / 2, RandomStringUtils.randomAlphanumeric(4096));
+                maxTimestampExpectedSec = Math.max(timestampSec, maxTimestampExpectedSec);
                 inserted.add(key);
             }
             cfs.forceBlockingFlush();
-            CompactionsTest.assertMaxTimestamp(cfs, maxTimestampExpected);
+            CompactionsTest.assertMaxTimestamp(cfs, maxTimestampExpectedSec * 1000000L);
 
             assertEquals(inserted.toString(), inserted.size(), Util.getAll(Util.cmd(cfs).build()).size());
         }
@@ -211,7 +206,7 @@ public class LongTimeOrderedKeyCompactionsTest
         assertEquals(inserted.toString(), inserted.size(), Util.getAll(Util.cmd(cfs).build()).size());
 
         // make sure max timestamp of compacted sstables is recorded properly after compaction.
-        CompactionsTest.assertMaxTimestamp(cfs, maxTimestampExpected);
+        CompactionsTest.assertMaxTimestamp(cfs, maxTimestampExpectedSec * 1000000L);
         cfs.truncateBlocking();
     }
 
@@ -219,23 +214,6 @@ public class LongTimeOrderedKeyCompactionsTest
     {
         // re-enable compaction with thresholds low enough to force a few rounds
         cfs.setCompactionThresholds(2, 4);
-
-        // loop submitting parallel compactions until they all return 0
-        do
-        {
-            ArrayList<Future<?>> compactions = new ArrayList<Future<?>>();
-            for (int i = 0; i < 10; i++)
-            {
-                compactions.addAll(CompactionManager.instance.submitBackground(cfs));
-            }
-            // another compaction attempt will be launched in the background by
-            // each completing compaction: not much we can do to control them here
-            FBUtilities.waitOnFutures(compactions);
-        } while (CompactionManager.instance.getPendingTasks() > 0 || CompactionManager.instance.getActiveCompactions() > 0);
-
-        if (cfs.getLiveSSTables().size() > 1)
-        {
-            CompactionManager.instance.performMaximal(cfs, false);
-        }
+        waitForCompaction(cfs);
     }
 }

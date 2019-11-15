@@ -76,20 +76,15 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
         CompactionAwareWriter writer = new TimeBasedSplittingCompactionWriter(cfs, cfs.getDirectories(), txn, txn.originals(), false, 60_000, 0, 3);
 
         int rows = compact(cfs, txn, writer);
-        long expectedSize = beforeSize * 60 / rowCount;
         List<SSTableReader> sortedSSTables = new ArrayList<>(cfs.getLiveSSTables());
 
         Collections.sort(sortedSSTables, (o1, o2) -> Longs.compare(o2.onDiskLength(), o1.onDiskLength()));
 
-        for (int i = 0; i < sortedSSTables.size() - 1; ++i)
+        for (int i = 0; i < sortedSSTables.size(); ++i)
         {
-            // allow 1% diff in estimated vs actual size
-            Assert.assertEquals((double) expectedSize, sortedSSTables.get(i).onDiskLength(), expectedSize / 100.0);
+            // allow 5% diff in estimated vs actual size
+            Assert.assertEquals(beforeSize / 3.0, sortedSSTables.get(i).onDiskLength(), beforeSize / 3.0 / 20.0);
         }
-
-        long lastFileExpectedSize = beforeSize * (rowCount % 60) / rowCount;
-        // allow 10% diff in estimated vs actual size
-        Assert.assertEquals((double) lastFileExpectedSize, sortedSSTables.get(sortedSSTables.size() - 1).onDiskLength(), lastFileExpectedSize / 10.0);
 
         Assert.assertEquals(rowCount, rows);
         validateData(cfs, rowCount);

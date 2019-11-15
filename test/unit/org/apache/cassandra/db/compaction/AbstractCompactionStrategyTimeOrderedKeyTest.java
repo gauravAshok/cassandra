@@ -21,9 +21,11 @@ package org.apache.cassandra.db.compaction;
 import junit.framework.Assert;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.CompactionParams;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.FBUtilities;
@@ -31,6 +33,8 @@ import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
@@ -44,9 +48,10 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
     {
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE1,
-                                    KeyspaceParams.simple(1),
-                                    SchemaLoader.TimeOrderedKeyCFMD.standardCFMD(KEYSPACE1, TOKCS_TABLE)
-                                                .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getTOKCSOptions("0,0", "0,0", 1, 3, 10000))));
+                KeyspaceParams.simple(1),
+                SchemaLoader.TimeOrderedKeyCFMD.standardCFMD(KEYSPACE1, TOKCS_TABLE)
+                        .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getTOKCSOptions("0,0", "0,0", 1, 3, 10000)))
+                        .gcGraceSeconds(0));
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(TOKCS_TABLE).disableAutoCompaction();
     }
 
@@ -56,13 +61,13 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(TOKCS_TABLE).truncateBlocking();
     }
 
-    @Test(timeout=9000000)
+    @Test(timeout = 90000)
     public void testGetNextBackgroundTaskDoesNotBlockTOKCSTombstoneRange()
     {
         testGetNextBackgroundTaskDoesNotBlock(TOKCS_TABLE, true);
     }
 
-    @Test(timeout=90000)
+    @Test(timeout = 90000)
     public void testGetNextBackgroundTaskDoesNotBlockTOKCSNormalTombstone()
     {
         testGetNextBackgroundTaskDoesNotBlock(TOKCS_TABLE, false);
@@ -91,16 +96,29 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
             cfs.forceBlockingFlush();
         });
 
-        Util.waitUptoNearestSeconds(60); // wait for a minute, because TOKCS only considers window that has been completed
+        Set<SSTableReader> beforeCompaction = cfs.getLiveSSTables();
+        Set<SSTableReader> chosenForCompaction = new HashSet<>();
 
         // Check they are returned on the next background task
-        try (LifecycleTransaction txn = strategy.getNextBackgroundTask(FBUtilities.nowInSeconds()).transaction)
+        int compactionRound = 4;
+        while (--compactionRound >= 0)
         {
-            Assert.assertEquals(cfs.getLiveSSTables(), txn.originals());
+            try (LifecycleTransaction txn = strategy.getNextBackgroundTask(FBUtilities.nowInSeconds()).transaction)
+            {
+                Assert.assertEquals(2, txn.originals().size());
+                Set<SSTableReader> dataOnly = Util.dataOnly(txn.originals());
+                Set<SSTableReader> tombstoneOnly = Util.tombstonesOnly(txn.originals());
+
+                Assert.assertEquals(1, dataOnly.size());
+                Assert.assertEquals(1, tombstoneOnly.size());
+
+                chosenForCompaction.addAll(txn.originals());
+                // now remove sstables on the tracker, to simulate a concurrent transaction
+                cfs.getTracker().removeUnsafe(txn.originals());
+            }
         }
 
-        // now remove sstables on the tracker, to simulate a concurrent transaction
-        cfs.getTracker().removeUnsafe(cfs.getLiveSSTables());
+        Assert.assertEquals(beforeCompaction, chosenForCompaction);
 
         // verify the compaction strategy will return null
         Assert.assertNull(strategy.getNextBackgroundTask(FBUtilities.nowInSeconds()));

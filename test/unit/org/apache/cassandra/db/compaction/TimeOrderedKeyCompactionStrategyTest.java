@@ -61,6 +61,7 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
                 KeyspaceParams.simple(1),
                 SchemaLoader.TimeOrderedKeyCFMD.standardCFMD(KEYSPACE1, CF_STANDARD1)
                         .compaction(CompactionParams.create(TimeOrderedKeyCompactionStrategy.class, TOKCSUtil.getDefaultTOKCSOptions()))
+                        .gcGraceSeconds(0)
                         .timeOrderedKey(true));
     }
 
@@ -200,14 +201,14 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         long ts8 = epoch("2019-08-10 13:01:01");
         long ts9 = epoch("2019-08-10 13:01:00");
 
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 1_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts2, 60_000));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 3_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts3, 30_000));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 8_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts4, 15_000));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 120_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts5, 30_000));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), (59 + 60 * 5) * 1000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts6, 60_000));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), (60 * 11 / 2) * 1000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts7, 120_000));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), (60 * 24 / 4 + 1) * 1000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts8, 240_000));
-        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 12:56:00"), (60 * 24 / 8 + 1) * 1000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts9, 480_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 1 * 60_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts2, 60_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 3 * 30_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts3, 30_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 8 * 15_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts4, 15_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), 120 * 30_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts5, 30_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:01:00"), (59 + 60 * 5) * 60_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts6, 60_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), (60 * 11 / 2) * 120_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts7, 120_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 13:00:00"), (60 * 24 / 4 + 1) * 240_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts8, 240_000));
+        Assert.assertEquals(new TimeWindow(epoch("2019-08-09 12:56:00"), (60 * 24 / 8 + 1) * 480_000), TimeOrderedKeyCompactionStrategy.toWindowMs(ts1, ts9, 480_000));
     }
 
     private long epoch(String str)
@@ -291,10 +292,12 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
 
         populateData(cfs, partitions, rowsPerPartition, rowDeletesPerPartition, rowDeletePartitionRange, partitionDeleteRange);
 
-        Assert.assertEquals(2, cfs.getLiveSSTables().size());
+        List<SSTableReader> dataOnly = new ArrayList<>(Util.dataOnly(cfs.getLiveSSTables()));
+        List<SSTableReader> tombstoneOnly = new ArrayList<>(Util.tombstonesOnly(cfs.getLiveSSTables()));
+        Assert.assertEquals(1, dataOnly.size());
+        Assert.assertEquals(1, tombstoneOnly.size());
 
-        List<SSTableReader> files = sort(cfs.getLiveSSTables());
-        SSTableStats data = new SSTableStats(files.get(0)), tombstone = new SSTableStats(files.get(1));
+        SSTableStats data = new SSTableStats(dataOnly.get(0)), tombstone = new SSTableStats(tombstoneOnly.get(0));
 
         // get the compaction task
         TimeOrderedKeyCompactionStrategy compactionStrategy = new TimeOrderedKeyCompactionStrategy(cfs, TOKCSUtil.getDefaultTOKCSOptions());
@@ -306,7 +309,10 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         Assert.assertEquals(Collections.emptyList(), categorized.latestTombstones);
 
         // 1 minute window
-        assertEquals(60, TimeWindow.merge(data.timeWindowMs, tombstone.timeWindowMs).duration);
+        assertEquals(10_000, TimeWindow.merge(data.timeWindowMs, tombstone.timeWindowMs).duration);
+
+        TimeOrderedKeyCompactionStrategy.SSTablesForCompaction candidate = compactionStrategy.getNextBackgroundSSTables(FBUtilities.nowInSeconds());
+        Assert.assertEquals(cfs.getLiveSSTables(), new HashSet<>(candidate.sstables));
 
         double garbagePercent = TimeOrderedKeyCompactionStrategy.getEstimatedGarbage(categorized.stats) * 100.0 / categorized.stats.onDiskLength;
 
@@ -368,37 +374,49 @@ public class TimeOrderedKeyCompactionStrategyTest extends SchemaLoader
         }
 
         assertEquals(20, cfs.getLiveSSTables().size());
-        Set<SSTableReader> tombstones = Util.tombstonesOnly(cfs.getLiveSSTables());
 
         TimeOrderedKeyCompactionStrategy compactionStrategy = new TimeOrderedKeyCompactionStrategy(cfs, TOKCSUtil.getDefaultTOKCSOptions());
+        cfs.getLiveSSTables().forEach(compactionStrategy::addSSTable);
+
+        Set<SSTableReader> dataOnly = Util.dataOnly(cfs.getLiveSSTables());
+        Set<SSTableReader> tombstoneOnly = Util.tombstonesOnly(cfs.getLiveSSTables());
+
+        SSTableReader loneTombstone = tombstoneOnly.stream().min(Comparator.comparingLong(s -> s.getSSTableMetadata().minKey)).get();
+        SSTableReader loneData = dataOnly.stream().max(Comparator.comparingLong(s -> s.getSSTableMetadata().maxKey)).get();
 
         // Case 1: with gcBefore = NO, no tombstone file is expired.
         TimeOrderedKeyCompactionStrategy.SSTablesForCompaction candidate = compactionStrategy.getNextBackgroundSSTables(CompactionManager.NO_GC);
-
-        // expect the tombstone only compactions
         assertSame(TimeOrderedKeyCompactionStrategy.SSTablesForCompaction.EMPTY, candidate);
 
         // Case 2: with gcBefore to ALL, window1 should be chosen as it has most garbage
-        candidate = compactionStrategy.getNextBackgroundSSTables(CompactionManager.GC_ALL);
-        Set<SSTableReader> expectedWindow1 = cfs.getLiveSSTables().stream().filter(s -> s.getSSTableMetadata().minKey < 60000).collect(Collectors.toSet());
 
-        assertEquals(expectedWindow1, new HashSet<>(candidate.sstables));
-        assertFalse(candidate.tombstoneMerge);
-        assertTrue(candidate.splitSSTable);
+        Set<SSTableReader> chosenSStables = new HashSet<>();
 
-        candidate.sstables.forEach(s -> compactionStrategy.removeSSTable(s));
+        while((candidate = compactionStrategy.getNextBackgroundSSTables(CompactionManager.GC_ALL)) != TimeOrderedKeyCompactionStrategy.SSTablesForCompaction.EMPTY)
+        {
+            if(candidate.sstables.size() == 1) {
+                assertEquals(loneTombstone, candidate.sstables.get(0));
+            }
+            else if(candidate.sstables.size() == 2) {
+                assertEquals(1, Util.dataOnly(candidate.sstables).size());
+                assertEquals(1, Util.tombstonesOnly(candidate.sstables).size());
+            }
+            else {
+                fail("only expecting 2 or 1 candidate sstables for compaction.");
+            }
 
-        // Case 3: check for remaining sstable now.
-        candidate = compactionStrategy.getNextBackgroundSSTables(CompactionManager.GC_ALL);
+            assertFalse(candidate.tombstoneMerge);
+            assertTrue(candidate.splitSSTable);
+            chosenSStables.addAll(candidate.sstables);
+            // effect of compaction.
+            candidate.sstables.forEach(compactionStrategy::removeSSTable);
+        }
 
-        // last data sstable has the data that is not deleted
-        SSTableReader lastDataSSTable = Util.dataOnly(cfs.getLiveSSTables()).stream().max(Comparator.comparingLong(s -> s.maxDataAge)).get();
-        Set<SSTableReader> expectedWindow2 = new HashSet<>(cfs.getLiveSSTables());
-        expectedWindow2.removeAll(expectedWindow1);
-        expectedWindow2.remove(lastDataSSTable);
+        Set<SSTableReader> expected = new HashSet<>();
+        expected.addAll(dataOnly);
+        expected.addAll(tombstoneOnly);
+        expected.remove(loneData);
 
-        assertEquals(expectedWindow2, new HashSet<>(candidate.sstables));
-        assertFalse(candidate.tombstoneMerge);
-        assertTrue(candidate.splitSSTable);
+        assertEquals(expected, chosenSStables);
     }
 }

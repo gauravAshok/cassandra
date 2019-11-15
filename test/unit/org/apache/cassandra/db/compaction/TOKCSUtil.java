@@ -30,12 +30,12 @@ import java.util.Map;
 
 public class TOKCSUtil
 {
-    public static void insertStandard1(ColumnFamilyStore cfs, int i)
+    public static DecoratedKey insertStandard1(ColumnFamilyStore cfs, int i)
     {
-        insertStandard1(cfs, FBUtilities.nowInSeconds(), i, i, null);
+        return insertStandard1(cfs, FBUtilities.nowInSeconds(), i, i, null);
     }
 
-    public static void insertStandard1(ColumnFamilyStore cfs, long timestampInSec, int i, int j, String payload)
+    public static DecoratedKey insertStandard1(ColumnFamilyStore cfs, long timestampInSec, int i, int j, String payload)
     {
         Date key = Util.dt(i);
         payload = payload == null ? key.toString() : payload;
@@ -44,6 +44,7 @@ public class TOKCSUtil
                 .add("val0", "val0_" + payload)
                 .build()
                 .applyUnsafe();
+        return Util.dk(key.getTime(), 1000);
     }
 
     public static void deleteStandard1(ColumnFamilyStore cfs, int i)
@@ -105,6 +106,9 @@ public class TOKCSUtil
         options.put(TimeWindowCompactionStrategyOptions.COMPACTION_WINDOW_UNIT_KEY, "MINUTES");
         options.put(TimeOrderedKeyCompactionStrategyOptions.SPLIT_FACTOR_KEY, String.valueOf(splitFactor));
         options.put(TimeOrderedKeyCompactionStrategyOptions.COMPACTION_MAX_SIZE_MB, String.valueOf(maxSizeForCompaction));
+        // min threshold is not in use.
+        // max threshold is used to limit number of files for compaction.
+        options.put("max_threshold", "32");
         options.put("log_all", "true");
         return options;
     }
