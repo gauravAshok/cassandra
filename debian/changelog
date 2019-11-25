@@ -1,3 +1,9 @@
+cassandra (3.11.4.vrd.1) UNRELEASED; urgency=medium
+
+  * New internal release. Introduced a new compaction strategy.
+
+ -- Gaurav Ashok <gaurav.ashok@flipkart.com>  Mon, 25 Nov 2019 12:36:09 +0000
+
 cassandra (3.11.4) unstable; urgency=medium
 
   * New release
