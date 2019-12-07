@@ -1,4 +1,4 @@
-cassandra (3.11.4.vrd.1) UNRELEASED; urgency=medium
+cassandra (3.11.4-vrd.1) UNRELEASED; urgency=medium
 
   * New internal release. Introduced a new compaction strategy.
 
