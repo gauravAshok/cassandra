@@ -103,8 +103,10 @@ public class AbstractCompactionStrategyTimeOrderedKeyTest
         int compactionRound = 4;
         while (--compactionRound >= 0)
         {
-            try (LifecycleTransaction txn = strategy.getNextBackgroundTask(FBUtilities.nowInSeconds()).transaction)
+            // pass now() + 1 as gc_before, because latest tombstones will obviously not be expired this soon.
+            try (LifecycleTransaction txn = strategy.getNextBackgroundTask(FBUtilities.nowInSeconds() + 1).transaction)
             {
+                Assert.assertEquals(compactionRound + 1, strategy.getEstimatedRemainingTasks());
                 Assert.assertEquals(2, txn.originals().size());
                 Set<SSTableReader> dataOnly = Util.dataOnly(txn.originals());
                 Set<SSTableReader> tombstoneOnly = Util.tombstonesOnly(txn.originals());

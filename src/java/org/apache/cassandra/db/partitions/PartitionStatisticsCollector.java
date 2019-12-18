@@ -33,5 +33,5 @@ public interface PartitionStatisticsCollector
     public void update(Cell cell);
     public void updateColumnSetPerRow(long columnSetInRow);
     public void updateHasLegacyCounterShards(boolean hasLegacyCounterShards);
-    default public void updateDeletionFor(DeletionFor deletionFor) { }
+    default public void updateDeletionFor(DeletionFor deletionFor, long delta) { }
 }

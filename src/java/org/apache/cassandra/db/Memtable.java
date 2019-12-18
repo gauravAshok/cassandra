@@ -699,7 +699,7 @@ public class Memtable implements Comparable<Memtable>
                 // get the next item first
                 hasNext();
             }
-            assert item != null : "hasNext probably hasNext was not called on the unfilteredIterator";
+            assert item != null : "probably hasNext was not called on the unfilteredIterator";
 
             itemConsumed = true;
             return item;

@@ -217,6 +217,7 @@ public class BigTableWriter extends SSTableWriter
     {
         private final MetadataCollector collector;
         private int cellCount;
+        long rowTombstones, rangeTombstones, partitionTombstones;
 
         StatsCollector(MetadataCollector collector)
         {
@@ -237,7 +238,7 @@ public class BigTableWriter extends SSTableWriter
             collector.updateClusteringValues(row.clustering());
             cellCount += Rows.collectStats(row, collector);
             if(!row.deletion().isLive()) {
-                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.ROW);
+                rowTombstones++;
             }
             return row;
         }
@@ -251,13 +252,12 @@ public class BigTableWriter extends SSTableWriter
                 RangeTombstoneBoundaryMarker bm = (RangeTombstoneBoundaryMarker)marker;
                 collector.update(bm.endDeletionTime());
                 collector.update(bm.startDeletionTime());
-                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.RANGE);
-                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.RANGE);
+                rangeTombstones += 2;
             }
             else
             {
                 collector.update(((RangeTombstoneBoundMarker)marker).deletionTime());
-                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.RANGE);
+                rangeTombstones++;
             }
             return marker;
         }
@@ -266,6 +266,17 @@ public class BigTableWriter extends SSTableWriter
         public void onPartitionClose()
         {
             collector.addCellPerPartitionCount(cellCount);
+            assert partitionTombstones == 0 || partitionTombstones == 1;
+            if(partitionTombstones == 1) {
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.PARTITION, 1);
+            }
+            else {
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.ROW, rowTombstones);
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.RANGE, rangeTombstones);
+            }
+            partitionTombstones = 0;
+            rowTombstones = 0;
+            rangeTombstones = 0;
         }
 
         @Override
@@ -273,7 +284,7 @@ public class BigTableWriter extends SSTableWriter
         {
             collector.update(deletionTime);
             if(!deletionTime.isLive()) {
-                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.PARTITION);
+                partitionTombstones++;
             }
             return deletionTime;
         }

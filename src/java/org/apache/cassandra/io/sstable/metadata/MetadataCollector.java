@@ -198,18 +198,20 @@ public class MetadataCollector implements PartitionStatisticsCollector
         updateLocalDeletionTime(cell.localDeletionTime());
     }
 
+
+
     @Override
-    public void updateDeletionFor(DeletionFor deletionFor)
+    public void updateDeletionFor(DeletionFor deletionFor, long delta)
     {
         switch (deletionFor) {
             case RANGE:
-                rangeTombstones += 1;
+                rangeTombstones += delta;
                 return;
             case ROW:
-                rowTombstones += 1;
+                rowTombstones += delta;
                 return;
             case PARTITION:
-                partitionTombstones += 1;
+                partitionTombstones += delta;
                 return;
         }
     }
