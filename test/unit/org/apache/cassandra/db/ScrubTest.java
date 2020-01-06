@@ -639,7 +639,7 @@ public class ScrubTest
     private static SSTableMultiWriter createTestWriter(Descriptor descriptor, long keyCount, CFMetaData metadata, LifecycleTransaction txn)
     {
         SerializationHeader header = new SerializationHeader(true, metadata, metadata.partitionColumns(), EncodingStats.NO_STATS);
-        MetadataCollector collector = new MetadataCollector(metadata.comparator).sstableLevel(0);
+        MetadataCollector collector = new MetadataCollector(metadata.comparator, metadata.params.timeOrderedKey).sstableLevel(0);
         return new TestMultiWriter(new TestWriter(descriptor, keyCount, 0, metadata, collector, header, txn), txn);
     }
 

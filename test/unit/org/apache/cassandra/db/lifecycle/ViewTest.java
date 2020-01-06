@@ -222,7 +222,7 @@ public class ViewTest
             memtables.add(MockSchema.memtable(cfs));
         for (int i = 0 ; i < sstableCount ; i++)
             sstables.add(MockSchema.sstable(i, keepRef, cfs));
-        return new View(ImmutableList.copyOf(memtables), Collections.<Memtable>emptyList(), Helpers.identityMap(sstables),
-                        Collections.<SSTableReader, SSTableReader>emptyMap(), SSTableIntervalTree.build(sstables));
+        return new View(ImmutableList.copyOf(memtables), Collections.emptyList(), Helpers.identityMap(sstables),
+                        Collections.emptyMap(), SSTableIntervalTree.build(sstables), SSTableTimeIntervalTree.empty(), View.TimeOrdered.NO, true);
     }
 }

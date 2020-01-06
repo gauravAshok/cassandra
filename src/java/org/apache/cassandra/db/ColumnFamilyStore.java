@@ -381,6 +381,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         return compactionStrategyManager.getCompactionParams().asMap();
     }
 
+    public boolean timeOrderedKey() {
+        return metadata.params.timeOrderedKey;
+    }
+
     public Map<String,String> getCompressionParameters()
     {
         return metadata.params.compression.asMap();
@@ -524,7 +528,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public SSTableMultiWriter createSSTableMultiWriter(Descriptor descriptor, long keyCount, long repairedAt, int sstableLevel, SerializationHeader header, LifecycleNewTracker lifecycleNewTracker)
     {
-        MetadataCollector collector = new MetadataCollector(metadata.comparator).sstableLevel(sstableLevel);
+        MetadataCollector collector = new MetadataCollector(metadata.comparator, timeOrderedKey()).sstableLevel(sstableLevel);
         return createSSTableMultiWriter(descriptor, keyCount, repairedAt, collector, header, lifecycleNewTracker);
     }
 
@@ -1138,7 +1142,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 return Collections.emptyList();
             }
 
-            List<Future<SSTableMultiWriter>> futures = new ArrayList<>();
+            List<Future<Pair<SSTableMultiWriter, SSTableMultiWriter>>> futures = new ArrayList<>();
             long totalBytesOnDisk = 0;
             long maxBytesOnDisk = 0;
             long minBytesOnDisk = Long.MAX_VALUE;
@@ -1165,7 +1169,16 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     if (flushNonCf2i)
                         indexManager.flushAllNonCFSBackedIndexesBlocking();
 
-                    flushResults = Lists.newArrayList(FBUtilities.waitOnFutures(futures));
+                    List<Pair<SSTableMultiWriter, SSTableMultiWriter>> sstablesResult = FBUtilities.waitOnFutures(futures);
+                    flushResults = new ArrayList<>(sstablesResult.size());
+                    for(Pair<SSTableMultiWriter, SSTableMultiWriter> sstablePair: sstablesResult)
+                    {
+                        flushResults.add(sstablePair.left);
+                        if(sstablePair.right != null)
+                        {
+                            flushResults.add(sstablePair.right);
+                        }
+                    }
                 }
                 catch (Throwable t)
                 {
@@ -2681,6 +2694,22 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             return null;
 
         Keyspace keyspace = Keyspace.open(ksName);
+        if (keyspace == null)
+            return null;
+
+        UUID id = Schema.instance.getId(ksName, cfName);
+        if (id == null)
+            return null;
+
+        return keyspace.getColumnFamilyStore(id);
+    }
+
+    public static ColumnFamilyStore getWithoutInitiatingOpen(String ksName, String cfName)
+    {
+        if (ksName == null || cfName == null)
+            return null;
+
+        Keyspace keyspace = Keyspace.getWithoutOpening(ksName);
         if (keyspace == null)
             return null;
 

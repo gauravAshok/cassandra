@@ -1362,7 +1362,7 @@ public class CompactionManager implements CompactionManagerMBean
                                     (long) expectedBloomFilterSize,
                                     repairedAt,
                                     cfs.metadata,
-                                    new MetadataCollector(sstables, cfs.metadata.comparator, minLevel),
+                                    new MetadataCollector(sstables, cfs.metadata.comparator, cfs.timeOrderedKey(), minLevel),
                                     SerializationHeader.make(cfs.metadata, sstables),
                                     cfs.indexManager.listIndexes(),
                                     txn);

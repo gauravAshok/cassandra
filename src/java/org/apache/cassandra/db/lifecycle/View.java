@@ -17,31 +17,32 @@
  */
 package org.apache.cassandra.db.lifecycle;
 
-import java.util.*;
-
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.base.Predicate;
-import com.google.common.collect.*;
-
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
+import org.apache.cassandra.config.SchemaConstants;
+import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Memtable;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.utils.Interval;
+import org.apache.cassandra.utils.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
 
 import static com.google.common.base.Predicates.equalTo;
 import static com.google.common.base.Predicates.not;
 import static com.google.common.collect.ImmutableList.copyOf;
 import static com.google.common.collect.ImmutableList.of;
-import static com.google.common.collect.Iterables.all;
-import static com.google.common.collect.Iterables.concat;
-import static com.google.common.collect.Iterables.filter;
-import static org.apache.cassandra.db.lifecycle.Helpers.emptySet;
-import static org.apache.cassandra.db.lifecycle.Helpers.filterOut;
-import static org.apache.cassandra.db.lifecycle.Helpers.replace;
+import static com.google.common.collect.Iterables.*;
+import static org.apache.cassandra.db.lifecycle.Helpers.*;
 
 /**
  * An immutable structure holding the current memtable, the memtables pending
@@ -55,6 +56,7 @@ import static org.apache.cassandra.db.lifecycle.Helpers.replace;
  */
 public class View
 {
+    private static final Logger logger = LoggerFactory.getLogger(View.class);
     /**
      * ordinarily a list of size 1, but when preparing to flush will contain both the memtable we will flush
      * and the new replacement memtable, until all outstanding write operations on the old table complete.
@@ -76,8 +78,17 @@ public class View
     final Map<SSTableReader, SSTableReader> compactingMap;
 
     final SSTableIntervalTree intervalTree;
+    final SSTableTimeIntervalTree timeIntervalTree;
 
-    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree)
+    final boolean isDummy;
+    final TimeOrdered timeOrderedKeyStatus;
+
+    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, boolean isDummy)
+    {
+        this(liveMemtables, flushingMemtables, sstables, compacting, intervalTree, SSTableTimeIntervalTree.empty(), isDummy ? TimeOrdered.NO : TimeOrdered.UNKNOWN, isDummy);
+    }
+
+    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, SSTableTimeIntervalTree timeIntervalTree, TimeOrdered timeOrderedKeyStatus, boolean isDummy)
     {
         assert liveMemtables != null;
         assert flushingMemtables != null;
@@ -93,6 +104,38 @@ public class View
         this.compactingMap = compacting;
         this.compacting = compactingMap.keySet();
         this.intervalTree = intervalTree;
+        this.isDummy = isDummy;
+
+        if (timeOrderedKeyStatus == TimeOrdered.UNKNOWN)
+        {
+            Pair<String, String> kscf = findKSCF();
+            if (kscf != null)
+            {
+                // if kscf is non null, we should be able to get out the table properties.
+                boolean isTimeOrdered = isTimeOrderedKey(kscf);
+                this.timeOrderedKeyStatus = isTimeOrdered ? TimeOrdered.YES : TimeOrdered.NO;
+                this.timeIntervalTree = isTimeOrdered ? SSTableTimeIntervalTree.build(this.sstablesMap.keySet()) : SSTableTimeIntervalTree.empty();
+            }
+            else
+            {
+                this.timeOrderedKeyStatus = TimeOrdered.UNKNOWN;
+                this.timeIntervalTree = SSTableTimeIntervalTree.empty();
+            }
+        }
+        else
+        {
+            this.timeOrderedKeyStatus = timeOrderedKeyStatus;
+            this.timeIntervalTree = timeIntervalTree;
+        }
+
+        // TODO: remove these extensive logging after thorough testing
+        findAndLogKSCF("create");
+    }
+
+    enum TimeOrdered {
+        YES,
+        NO,
+        UNKNOWN
     }
 
     public Memtable getCurrentMemtable()
@@ -155,13 +198,7 @@ public class View
 
     public Iterable<SSTableReader> getUncompacting(Iterable<SSTableReader> candidates)
     {
-        return filter(candidates, new Predicate<SSTableReader>()
-        {
-            public boolean apply(SSTableReader sstable)
-            {
-                return !compacting.contains(sstable);
-            }
-        });
+        return filter(candidates, sstable -> !compacting.contains(sstable));
     }
 
     public boolean isEmpty()
@@ -175,7 +212,8 @@ public class View
     @Override
     public String toString()
     {
-        return String.format("View(pending_count=%d, sstables=%s, compacting=%s)", liveMemtables.size() + flushingMemtables.size() - 1, sstables, compacting);
+        return String.format("View(pending_count=%d, sstables=%s, compacting=%s, keyOrdered=%s)", liveMemtables.size() + flushingMemtables.size() - 1, sstables,
+                compacting, timeOrderedKeyStatus);
     }
 
     /**
@@ -184,6 +222,7 @@ public class View
      */
     public Iterable<SSTableReader> liveSSTablesInBounds(PartitionPosition left, PartitionPosition right)
     {
+        findAndLogKSCF("liveSSTablesInBounds");
         assert !AbstractBounds.strictlyWrapsAround(left, right);
 
         if (intervalTree.isEmpty())
@@ -191,6 +230,16 @@ public class View
 
         PartitionPosition stopInTree = right.isMinimum() ? intervalTree.max() : right;
         return intervalTree.search(Interval.create(left, stopInTree));
+    }
+
+    public Iterable<SSTableReader> liveSSTablesInTimeRange(long left, long right)
+    {
+        findAndLogKSCF("liveSSTablesInTimeRange");
+
+        if (timeIntervalTree.isEmpty())
+            return Collections.emptyList();
+
+        return timeIntervalTree.search(Interval.create(left, right));
     }
 
     public static List<SSTableReader> sstablesInBounds(PartitionPosition left, PartitionPosition right, SSTableIntervalTree intervalTree)
@@ -221,7 +270,23 @@ public class View
     public static Function<View, Iterable<SSTableReader>> select(SSTableSet sstableSet, DecoratedKey key)
     {
         assert sstableSet == SSTableSet.LIVE;
-        return (view) -> view.intervalTree.search(key);
+        return (view) -> {
+            view.findAndLogKSCF("select");
+            if(view.timeOrderedKeyStatus == TimeOrdered.YES)
+            {
+                return selectBasedOnTime(view, sstableSet, key);
+            }
+            else
+            {
+                return view.intervalTree.search(key);
+            }
+        };
+    }
+
+    private static Iterable<SSTableReader> selectBasedOnTime(View view, SSTableSet sstableSet, DecoratedKey key)
+    {
+        assert sstableSet == SSTableSet.LIVE;
+        return view.timeIntervalTree.searchByDecoratedKey(key);
     }
 
     /**
@@ -245,15 +310,11 @@ public class View
     {
         if (unmark.isEmpty() && Iterables.isEmpty(mark))
             return Functions.identity();
-        return new Function<View, View>()
-        {
-            public View apply(View view)
-            {
-                assert all(mark, Helpers.idIn(view.sstablesMap));
-                return new View(view.liveMemtables, view.flushingMemtables, view.sstablesMap,
-                                replace(view.compactingMap, unmark, mark),
-                                view.intervalTree);
-            }
+        return view -> {
+            view.findAndLogKSCF("update compacting");
+            assert all(mark, Helpers.idIn(view.sstablesMap));
+            return new View(view.liveMemtables, view.flushingMemtables, view.sstablesMap,
+                            replace(view.compactingMap, unmark, mark), view.intervalTree, view.timeIntervalTree, view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
@@ -261,15 +322,12 @@ public class View
     // i.e. one of them is either already compacting, has been compacted, or has been replaced
     static Predicate<View> permitCompacting(final Iterable<SSTableReader> readers)
     {
-        return new Predicate<View>()
-        {
-            public boolean apply(View view)
-            {
-                for (SSTableReader reader : readers)
-                    if (view.compacting.contains(reader) || view.sstablesMap.get(reader) != reader || reader.isMarkedCompacted())
-                        return false;
-                return true;
-            }
+        return view -> {
+            view.findAndLogKSCF("permit compacting");
+            for (SSTableReader reader : readers)
+                if (view.compacting.contains(reader) || view.sstablesMap.get(reader) != reader || reader.isMarkedCompacted())
+                    return false;
+            return true;
         };
     }
 
@@ -278,79 +336,120 @@ public class View
     {
         if (remove.isEmpty() && Iterables.isEmpty(add))
             return Functions.identity();
-        return new Function<View, View>()
-        {
-            public View apply(View view)
-            {
-                Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, remove, add);
-                return new View(view.liveMemtables, view.flushingMemtables, sstableMap, view.compactingMap,
-                                SSTableIntervalTree.build(sstableMap.keySet()));
-            }
+        return view -> {
+            view.findAndLogKSCF("update liveSet");
+            Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, remove, add);
+
+            return new View(view.liveMemtables, view.flushingMemtables, sstableMap, view.compactingMap, SSTableIntervalTree.build(sstableMap.keySet()),
+                    view.timeOrderedKeyStatus == TimeOrdered.YES ? SSTableTimeIntervalTree.build(sstableMap.keySet()) : SSTableTimeIntervalTree.empty(),
+                    view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
     // called prior to initiating flush: add newMemtable to liveMemtables, making it the latest memtable
     static Function<View, View> switchMemtable(final Memtable newMemtable)
     {
-        return new Function<View, View>()
-        {
-            public View apply(View view)
-            {
-                List<Memtable> newLive = ImmutableList.<Memtable>builder().addAll(view.liveMemtables).add(newMemtable).build();
-                assert newLive.size() == view.liveMemtables.size() + 1;
-                return new View(newLive, view.flushingMemtables, view.sstablesMap, view.compactingMap, view.intervalTree);
-            }
+        return view -> {
+            view.findAndLogKSCF("switch memtable");
+            List<Memtable> newLive = ImmutableList.<Memtable>builder().addAll(view.liveMemtables).add(newMemtable).build();
+            assert newLive.size() == view.liveMemtables.size() + 1;
+            return new View(newLive, view.flushingMemtables, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
     // called before flush: move toFlush from liveMemtables to flushingMemtables
     static Function<View, View> markFlushing(final Memtable toFlush)
     {
-        return new Function<View, View>()
-        {
-            public View apply(View view)
-            {
-                List<Memtable> live = view.liveMemtables, flushing = view.flushingMemtables;
-                List<Memtable> newLive = copyOf(filter(live, not(equalTo(toFlush))));
-                List<Memtable> newFlushing = copyOf(concat(filter(flushing, lessThan(toFlush)),
-                                                           of(toFlush),
-                                                           filter(flushing, not(lessThan(toFlush)))));
-                assert newLive.size() == live.size() - 1;
-                assert newFlushing.size() == flushing.size() + 1;
-                return new View(newLive, newFlushing, view.sstablesMap, view.compactingMap, view.intervalTree);
-            }
+        return view -> {
+            view.findAndLogKSCF("mark flushing");
+            List<Memtable> live = view.liveMemtables, flushing = view.flushingMemtables;
+            List<Memtable> newLive = copyOf(filter(live, not(equalTo(toFlush))));
+            List<Memtable> newFlushing = copyOf(concat(filter(flushing, lessThan(toFlush)),
+                                                       of(toFlush),
+                                                       filter(flushing, not(lessThan(toFlush)))));
+            assert newLive.size() == live.size() - 1;
+            assert newFlushing.size() == flushing.size() + 1;
+            return new View(newLive, newFlushing, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
     // called after flush: removes memtable from flushingMemtables, and inserts flushed into the live sstable set
     static Function<View, View> replaceFlushed(final Memtable memtable, final Iterable<SSTableReader> flushed)
     {
-        return new Function<View, View>()
-        {
-            public View apply(View view)
-            {
-                List<Memtable> flushingMemtables = copyOf(filter(view.flushingMemtables, not(equalTo(memtable))));
-                assert flushingMemtables.size() == view.flushingMemtables.size() - 1;
+        return view -> {
+            view.findAndLogKSCF("replace flushed");
+            List<Memtable> flushingMemtables = copyOf(filter(view.flushingMemtables, not(equalTo(memtable))));
+            assert flushingMemtables.size() == view.flushingMemtables.size() - 1;
 
-                if (flushed == null || Iterables.isEmpty(flushed))
-                    return new View(view.liveMemtables, flushingMemtables, view.sstablesMap,
-                                    view.compactingMap, view.intervalTree);
+            if (flushed == null || Iterables.isEmpty(flushed))
+                return new View(view.liveMemtables, flushingMemtables, view.sstablesMap,
+                                view.compactingMap, view.intervalTree, view.timeIntervalTree, view.timeOrderedKeyStatus, view.isDummy);
 
-                Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, emptySet(), flushed);
-                return new View(view.liveMemtables, flushingMemtables, sstableMap, view.compactingMap,
-                                SSTableIntervalTree.build(sstableMap.keySet()));
-            }
+            Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, emptySet(), flushed);
+
+            return new View(view.liveMemtables, flushingMemtables, sstableMap, view.compactingMap, SSTableIntervalTree.build(sstableMap.keySet()),
+                    view.timeOrderedKeyStatus == TimeOrdered.YES ? SSTableTimeIntervalTree.build(sstableMap.keySet()) : null, view.timeOrderedKeyStatus, view.isDummy);
         };
     }
 
     private static <T extends Comparable<T>> Predicate<T> lessThan(final T lessThan)
     {
-        return new Predicate<T>()
+        return t -> t.compareTo(lessThan) < 0;
+    }
+
+    private Pair<String, String> findKSCF() {
+        Pair<String, String> kscf = kscf(liveMemtables);
+        kscf = kscf == null ? kscf(flushingMemtables) : kscf;
+        kscf = kscf == null ? kscf(sstables) : kscf;
+        kscf = kscf == null ? kscf(compacting) : kscf;
+
+        return kscf;
+    }
+
+    private void findAndLogKSCF(String tag)
+    {
+        if(logger.isDebugEnabled())
         {
-            public boolean apply(T t)
-            {
-                return t.compareTo(lessThan) < 0;
+            logKSCF(tag, findKSCF());
+        }
+    }
+
+    private void logKSCF(String tag, Pair<String, String> kscf) {
+        if(kscf == null) {
+//            logger.info("ks: {}, cf: {}, tag: {}, view: {}", null, null, tag, this);
+        } else {
+//            logger.info("ks: {}, cf: {}, tag: {}, view: {}", kscf.left, kscf.right, tag, this);
+        }
+    }
+
+    private static Pair<String, String> kscf(List<Memtable> tables) {
+        if(tables != null && !tables.isEmpty()) {
+            return Pair.create(tables.get(0).cfs.keyspace.getName(), tables.get(0).cfs.name);
+        }
+        return null;
+    }
+
+    private static boolean isTimeOrderedKey(Pair<String, String> kscf) {
+        if(kscf != null)
+        {
+            boolean isSystemKeyspace = SchemaConstants.isLocalSystemKeyspace(kscf.left) || SchemaConstants.isReplicatedSystemKeyspace(kscf.left);
+            if(!isSystemKeyspace) {
+                ColumnFamilyStore cfs = ColumnFamilyStore.getWithoutInitiatingOpen(kscf.left, kscf.right);
+                return cfs != null && cfs.metadata.params.timeOrderedKey;
             }
-        };
+        }
+        return false;
+    }
+
+    private static Pair<String, String> kscf(Iterable<SSTableReader> tables) {
+        if(tables != null)
+        {
+            Iterator<SSTableReader> it = tables.iterator();
+            if(it.hasNext()) {
+                SSTableReader item = it.next();
+                return Pair.create(item.getKeyspaceName(), item.getColumnFamilyName());
+            }
+        }
+        return null;
     }
 }

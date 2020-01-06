@@ -25,7 +25,7 @@
     <property name="debuglevel" value="source,lines,vars"/>
 
     <!-- default version and SCM information -->
-    <property name="base.version" value="3.11.6"/>
+    <property name="base.version" value="3.11.6-vrd.2"/>
     <property name="scm.connection" value="scm:https://gitbox.apache.org/repos/asf/cassandra.git"/>
     <property name="scm.developerConnection" value="scm:https://gitbox.apache.org/repos/asf/cassandra.git"/>
     <property name="scm.url" value="https://gitbox.apache.org/repos/asf?p=cassandra.git;a=tree"/>
@@ -78,7 +78,7 @@
     <condition property="version" value="${base.version}">
       <isset property="release"/>
     </condition>
-    <property name="version" value="${base.version}-SNAPSHOT"/>
+    <property name="version" value="${base.version}"/>
     <property name="version.properties.dir"
               value="${build.src.resources}/org/apache/cassandra/config/" />
     <property name="final.name" value="${ant.project.name}-${version}"/>

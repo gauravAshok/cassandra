@@ -55,12 +55,15 @@ public class StatsMetadata extends MetadataComponent
     public final double compressionRatio;
     public final StreamingHistogram estimatedTombstoneDropTime;
     public final int sstableLevel;
-    public final List<ByteBuffer> minClusteringValues;
     public final List<ByteBuffer> maxClusteringValues;
+    public final List<ByteBuffer> minClusteringValues;
     public final boolean hasLegacyCounterShards;
     public final long repairedAt;
     public final long totalColumnsSet;
     public final long totalRows;
+
+    public final long minKey, maxKey;
+    public final long partitionTombstones, rowTombstones, rangeTombstones;
 
     public StatsMetadata(EstimatedHistogram estimatedPartitionSize,
                          EstimatedHistogram estimatedColumnCount,
@@ -79,7 +82,9 @@ public class StatsMetadata extends MetadataComponent
                          boolean hasLegacyCounterShards,
                          long repairedAt,
                          long totalColumnsSet,
-                         long totalRows)
+                         long totalRows,
+                         long minKey, long maxKey,
+                         long partitionTombstones, long rowTombstones, long rangeTombstones)
     {
         this.estimatedPartitionSize = estimatedPartitionSize;
         this.estimatedColumnCount = estimatedColumnCount;
@@ -99,6 +104,11 @@ public class StatsMetadata extends MetadataComponent
         this.repairedAt = repairedAt;
         this.totalColumnsSet = totalColumnsSet;
         this.totalRows = totalRows;
+        this.minKey = minKey;
+        this.maxKey = maxKey;
+        this.partitionTombstones = partitionTombstones;
+        this.rowTombstones = rowTombstones;
+        this.rangeTombstones = rangeTombstones;
     }
 
     public MetadataType getType()
@@ -149,7 +159,8 @@ public class StatsMetadata extends MetadataComponent
                                  hasLegacyCounterShards,
                                  repairedAt,
                                  totalColumnsSet,
-                                 totalRows);
+                                 totalRows,
+                                 minKey, maxKey, partitionTombstones, rowTombstones, rangeTombstones);
     }
 
     public StatsMetadata mutateRepairedAt(long newRepairedAt)
@@ -171,7 +182,9 @@ public class StatsMetadata extends MetadataComponent
                                  hasLegacyCounterShards,
                                  newRepairedAt,
                                  totalColumnsSet,
-                                 totalRows);
+                                 totalRows,
+                                 minKey, maxKey,
+                                 partitionTombstones, rowTombstones, rangeTombstones);
     }
 
     @Override
@@ -200,6 +213,8 @@ public class StatsMetadata extends MetadataComponent
                        .append(hasLegacyCounterShards, that.hasLegacyCounterShards)
                        .append(totalColumnsSet, that.totalColumnsSet)
                        .append(totalRows, that.totalRows)
+                       .append(minKey, that.minKey).append(maxKey, that.maxKey)
+                       .append(partitionTombstones, that.partitionTombstones).append(rowTombstones, that.rowTombstones).append(rangeTombstones, that.rangeTombstones)
                        .build();
     }
 
@@ -225,6 +240,8 @@ public class StatsMetadata extends MetadataComponent
                        .append(hasLegacyCounterShards)
                        .append(totalColumnsSet)
                        .append(totalRows)
+                       .append(minKey).append(maxKey)
+                       .append(partitionTombstones).append(rowTombstones).append(rangeTombstones)
                        .build();
     }
 
@@ -257,6 +274,17 @@ public class StatsMetadata extends MetadataComponent
                 size += CommitLogPosition.serializer.serializedSize(component.commitLogIntervals.lowerBound().orElse(CommitLogPosition.NONE));
             if (version.hasCommitLogIntervals())
                 size += commitLogPositionSetSerializer.serializedSize(component.commitLogIntervals);
+
+            if(version.hasFirstKeyRange())
+                size += (2 * TypeSizes.sizeof(component.minKey));
+
+            if(version.hasTombstoneCounts())
+            {
+                size += TypeSizes.sizeof(component.partitionTombstones);
+                size += TypeSizes.sizeof(component.rowTombstones);
+                size += TypeSizes.sizeof(component.rangeTombstones);
+            }
+
             return size;
         }
 
@@ -297,6 +325,19 @@ public class StatsMetadata extends MetadataComponent
                 CommitLogPosition.serializer.serialize(component.commitLogIntervals.lowerBound().orElse(CommitLogPosition.NONE), out);
             if (version.hasCommitLogIntervals())
                 commitLogPositionSetSerializer.serialize(component.commitLogIntervals, out);
+
+            if(version.hasFirstKeyRange())
+            {
+                out.writeLong(component.minKey);
+                out.writeLong(component.maxKey);
+            }
+
+            if(version.hasTombstoneCounts())
+            {
+                out.writeLong(component.partitionTombstones);
+                out.writeLong(component.rowTombstones);
+                out.writeLong(component.rangeTombstones);
+            }
         }
 
         public StatsMetadata deserialize(Version version, DataInputPlus in) throws IOException
@@ -352,7 +393,22 @@ public class StatsMetadata extends MetadataComponent
             if (version.hasCommitLogIntervals())
                 commitLogIntervals = commitLogPositionSetSerializer.deserialize(in);
             else
-                commitLogIntervals = new IntervalSet<CommitLogPosition>(commitLogLowerBound, commitLogUpperBound);
+                commitLogIntervals = new IntervalSet<>(commitLogLowerBound, commitLogUpperBound);
+
+            long minKey = 0, maxKey = 0, partitionTombstones = 0, rowTombstones = 0, rangeTombstones = 0;
+
+            if(version.hasFirstKeyRange())
+            {
+                minKey = in.readLong();
+                maxKey = in.readLong();
+            }
+
+            if(version.hasTombstoneCounts())
+            {
+                partitionTombstones = in.readLong();
+                rowTombstones = in.readLong();
+                rangeTombstones = in.readLong();
+            }
 
             return new StatsMetadata(partitionSizes,
                                      columnCounts,
@@ -371,7 +427,9 @@ public class StatsMetadata extends MetadataComponent
                                      hasLegacyCounterShards,
                                      repairedAt,
                                      totalColumnsSet,
-                                     totalRows);
+                                     totalRows,
+                                     minKey, maxKey,
+                                     partitionTombstones, rowTombstones, rangeTombstones);
         }
     }
 }

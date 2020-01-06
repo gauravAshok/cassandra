@@ -169,6 +169,12 @@ public final class CFMetaData
         return this;
     }
 
+    public CFMetaData timeOrderedKey(boolean prop)
+    {
+        params = TableParams.builder(params).timeOrderedKey(prop).build();
+        return this;
+    }
+
     public CFMetaData bloomFilterFpChance(double prop)
     {
         params = TableParams.builder(params).bloomFilterFpChance(prop).build();

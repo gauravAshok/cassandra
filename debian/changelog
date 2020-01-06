@@ -1,3 +1,10 @@
+cassandra (3.11.6-vrd.2) UNRELEASED; urgency=medium
+
+  * New internal release. Introduced a new compaction strategy called TOKCS.
+  * Modified how TOKCS estimates remaining tasks.
+
+ -- Gaurav Ashok <gaurav.ashok@flipkart.com>  Wed, 18 Dec 2019 11:00:41 +0000
+
 cassandra (3.11.6) UNRELEASED; urgency=medium
 
   * New release

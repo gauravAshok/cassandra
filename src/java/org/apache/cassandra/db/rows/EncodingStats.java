@@ -143,6 +143,7 @@ public class EncodingStats
         private boolean isTTLSet;
         private int minTTL = Integer.MAX_VALUE;
 
+        @Override
         public void update(LivenessInfo info)
         {
             if (info.isEmpty())
@@ -157,6 +158,7 @@ public class EncodingStats
             }
         }
 
+        @Override
         public void update(Cell cell)
         {
             updateTimestamp(cell.timestamp());
@@ -171,6 +173,7 @@ public class EncodingStats
             }
         }
 
+        @Override
         public void update(DeletionTime deletionTime)
         {
             if (deletionTime.isLive())
@@ -198,10 +201,12 @@ public class EncodingStats
             minTTL = Math.min(minTTL, ttl);
         }
 
+        @Override
         public void updateColumnSetPerRow(long columnSetInRow)
         {
         }
 
+        @Override
         public void updateHasLegacyCounterShards(boolean hasLegacyCounterShards)
         {
             // We don't care about this but this come with PartitionStatisticsCollector

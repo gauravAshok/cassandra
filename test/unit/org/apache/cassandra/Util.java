@@ -25,15 +25,19 @@ import java.io.IOError;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
-import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
+import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.commons.lang3.StringUtils;
 
 import org.slf4j.Logger;
@@ -48,9 +52,6 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.Directories.DataDirectory;
 import org.apache.cassandra.db.compaction.AbstractCompactionTask;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.AsciiType;
-import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.dht.IPartitioner;
@@ -98,6 +99,12 @@ public class Util
     public static DecoratedKey dk(ByteBuffer key)
     {
         return testPartitioner().decorateKey(key);
+    }
+
+    public static DecoratedKey dk(long ts, int duration)
+    {
+        ByteBuffer bf = CompositeType.getInstance(LongType.instance, Int32Type.instance).decompose(ts, duration);
+        return testPartitioner().decorateKey(bf);
     }
 
     public static PartitionPosition rp(String key)
@@ -507,13 +514,7 @@ public class Util
     public static void assertColumns(Row row, String... expectedColumnNames)
     {
         Iterator<Cell> cells = row == null ? Collections.emptyIterator() : row.cells().iterator();
-        String[] actual = Iterators.toArray(Iterators.transform(cells, new Function<Cell, String>()
-        {
-            public String apply(Cell cell)
-            {
-                return cell.column().name.toString();
-            }
-        }), String.class);
+        String[] actual = Iterators.toArray(Iterators.transform(cells, cell -> cell.column().name.toString()), String.class);
 
         assert Arrays.equals(actual, expectedColumnNames)
         : String.format("Columns [%s])] is not expected [%s]",
@@ -711,5 +712,32 @@ public class Util
         Row row = BTreeRow.singleCellRow(c, BufferCell.live(def, 0, ByteBufferUtil.EMPTY_BYTE_BUFFER));
         PagingState.RowMark mark = PagingState.RowMark.create(metadata, row, protocolVersion);
         return new PagingState(pk, mark, 10, remainingInPartition);
+    }
+
+    public static Date dt(long offset) {
+        return Date.from(Instant.EPOCH.plus(offset, ChronoUnit.SECONDS));
+    }
+
+    public static void waitUptoNearestSeconds(int window) {
+        int waitTime = timeUptoNearestSeconds(window);
+        logger.info("waiting for {} seconds", waitTime);
+        FBUtilities.sleepQuietly(waitTime * 1000);
+    }
+
+    public static int timeUptoNearestSeconds(int window) {
+        int waitTime = window - (FBUtilities.nowInSeconds() % window);
+        return waitTime;
+    }
+
+    public static Set<SSTableReader> tombstonesOnly(Collection<SSTableReader> sstables) {
+        return sstables.stream()
+                .filter(s -> s.getSSTableMetadata().sstableLevel == SSTable.TOMBSTONE_SSTABLE_LVL)
+                .collect(Collectors.toSet());
+    }
+
+    public static Set<SSTableReader> dataOnly(Collection<SSTableReader> sstables) {
+        return sstables.stream()
+                .filter(s -> s.getSSTableMetadata().sstableLevel == SSTable.DATA_SSTABLE_LVL)
+                .collect(Collectors.toSet());
     }
 }

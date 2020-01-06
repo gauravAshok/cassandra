@@ -256,13 +256,7 @@ class Helpers
 
     static <T> Predicate<T> idIn(final Map<T, T> identityMap)
     {
-        return new Predicate<T>()
-        {
-            public boolean apply(T t)
-            {
-                return identityMap.get(t) == t;
-            }
-        };
+        return t -> identityMap.get(t) == t;
     }
 
 }

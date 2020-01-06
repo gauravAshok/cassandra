@@ -389,7 +389,6 @@ public class SchemaLoader
                                  .build();
     }
 
-
     public static CFMetaData denseCFMD(String ksName, String cfName)
     {
         return denseCFMD(ksName, cfName, AsciiType.instance);
@@ -756,6 +755,41 @@ public class SchemaLoader
 
         cfm.indexes(indexes);
         return cfm;
+    }
+
+    public static class TimeOrderedKeyCFMD {
+        public static CFMetaData standardCFMD(String ksName, String cfName)
+        {
+            return standardCFMD(ksName, cfName, 1, AsciiType.instance);
+        }
+
+        public static CFMetaData standardCFMD(String ksName, String cfName, int columnCount)
+        {
+            return standardCFMD(ksName, cfName, columnCount, AsciiType.instance);
+        }
+
+        public static CFMetaData standardCFMD(String ksName, String cfName, int columnCount, AbstractType<?> valType)
+        {
+            return standardCFMD(ksName, cfName, columnCount, valType, AsciiType.instance);
+        }
+
+        public static CFMetaData standardCFMD(String ksName, String cfName, int columnCount, AbstractType<?> valType, AbstractType<?> clusteringType)
+        {
+            CFMetaData.Builder builder;
+            builder = CFMetaData.Builder.create(ksName, cfName)
+                    .addPartitionKey("key", TimestampType.instance)
+                    .addPartitionKey("duration_ms", Int32Type.instance);
+
+            if(clusteringType != null)
+                builder = builder.addClusteringColumn("name", clusteringType);
+
+            for (int i = 0; i < columnCount; i++)
+                builder.addRegularColumn("val" + i, valType);
+
+            return builder.build()
+                    .compression(getCompressionParameters())
+                    .timeOrderedKey(true);
+        }
     }
 
     public static CompressionParams getCompressionParameters()

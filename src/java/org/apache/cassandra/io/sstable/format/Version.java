@@ -76,6 +76,10 @@ public abstract class Version
 
     public abstract boolean hasAccurateMinMax();
 
+    public abstract boolean hasFirstKeyRange();
+
+    public abstract boolean hasTombstoneCounts();
+
     public String getVersion()
     {
         return version;

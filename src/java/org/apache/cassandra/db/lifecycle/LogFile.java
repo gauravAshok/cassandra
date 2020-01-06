@@ -60,7 +60,7 @@ final class LogFile implements AutoCloseable
     static String EXT = ".log";
     static char SEP = '_';
     // cc_txn_opname_id.log (where cc is one of the sstable versions defined in BigVersion)
-    static Pattern FILE_REGEX = Pattern.compile(String.format("^(.{2})_txn_(.*)_(.*)%s$", EXT));
+    static Pattern FILE_REGEX = Pattern.compile(String.format("^([a-z]+)_txn_(.*)_(.*)%s$", EXT));
 
     // A set of physical files on disk, each file is an identical replica
     private final LogReplicaSet replicas = new LogReplicaSet();

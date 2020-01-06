@@ -171,24 +171,28 @@ public class RowsTest
     public static class StatsCollector implements PartitionStatisticsCollector
     {
         List<Cell> cells = new LinkedList<>();
+        @Override
         public void update(Cell cell)
         {
             cells.add(cell);
         }
 
         List<LivenessInfo> liveness = new LinkedList<>();
+        @Override
         public void update(LivenessInfo info)
         {
             liveness.add(info);
         }
 
         List<DeletionTime> deletions = new LinkedList<>();
+        @Override
         public void update(DeletionTime deletion)
         {
             deletions.add(deletion);
         }
 
         long columnCount = -1;
+        @Override
         public void updateColumnSetPerRow(long columnSetInRow)
         {
             assert columnCount < 0;
@@ -196,6 +200,7 @@ public class RowsTest
         }
 
         boolean hasLegacyCounterShards = false;
+        @Override
         public void updateHasLegacyCounterShards(boolean hasLegacyCounterShards)
         {
             this.hasLegacyCounterShards |= hasLegacyCounterShards;

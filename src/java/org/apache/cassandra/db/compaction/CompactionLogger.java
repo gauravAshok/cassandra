@@ -168,6 +168,12 @@ public class CompactionLogger
         node.put("generation", sstable.descriptor.generation);
         node.put("version", sstable.descriptor.version.getVersion());
         node.put("size", sstable.onDiskLength());
+        node.put("level", sstable.getSSTableLevel());
+        if(sstable.metadata.params.timeOrderedKey)
+        {
+            node.put("min", sstable.getSSTableMetadata().minKey);
+            node.put("max", sstable.getSSTableMetadata().maxKey);
+        }
         JsonNode logResult = strategy.strategyLogger().sstable(sstable);
         if (logResult != null)
             node.put("details", logResult);

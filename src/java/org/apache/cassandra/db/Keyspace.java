@@ -106,10 +106,21 @@ public class Keyspace
         return open(keyspaceName, Schema.instance, true);
     }
 
+    public static Keyspace getWithoutOpening(String keyspaceName)
+    {
+        assert initialized || SchemaConstants.isLocalSystemKeyspace(keyspaceName);
+        return getWithoutOpening(keyspaceName, Schema.instance);
+    }
+
     // to only be used by org.apache.cassandra.tools.Standalone* classes
     public static Keyspace openWithoutSSTables(String keyspaceName)
     {
         return open(keyspaceName, Schema.instance, false);
+    }
+
+    private static Keyspace getWithoutOpening(String keyspaceName, Schema schema)
+    {
+        return schema.getKeyspaceInstance(keyspaceName);
     }
 
     private static Keyspace open(String keyspaceName, Schema schema, boolean loadSSTables)
