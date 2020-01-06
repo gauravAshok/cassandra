@@ -26,12 +26,15 @@ import java.nio.file.Paths;
 
 import org.junit.AfterClass;
 import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.partitions.ImmutableBTreePartition;
 import org.apache.cassandra.db.rows.BufferCell;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.RowIterator;
+import org.apache.cassandra.db.rows.Rows;
 import org.apache.cassandra.db.rows.SerializationHelper;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIteratorSerializer;
+import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.db.transform.FilteredRows;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.DataInputBuffer;
@@ -39,6 +42,7 @@ import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.serializers.Int32Serializer;
 import org.apache.cassandra.serializers.UTF8Serializer;
+import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.utils.FBUtilities;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -59,7 +63,9 @@ import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.Hex;
 
+import static org.apache.cassandra.net.MessagingService.VERSION_21;
 import static org.junit.Assert.*;
 
 public class LegacyLayoutTest
@@ -191,10 +197,10 @@ public class LegacyLayoutTest
     {
         try (DataOutputBuffer out = new DataOutputBuffer())
         {
-            LegacyLayout.serializeAsLegacyPartition(null, partition, out, MessagingService.VERSION_21);
+            LegacyLayout.serializeAsLegacyPartition(null, partition, out, VERSION_21);
             try (DataInputBuffer in = new DataInputBuffer(out.buffer(), false))
             {
-                return LegacyLayout.deserializeLegacyPartition(in, MessagingService.VERSION_21, SerializationHelper.Flag.LOCAL, partition.partitionKey().getKey());
+                return LegacyLayout.deserializeLegacyPartition(in, VERSION_21, SerializationHelper.Flag.LOCAL, partition.partitionKey().getKey());
             }
         }
     }
@@ -288,11 +294,11 @@ public class LegacyLayoutTest
         try (RowIterator before = FilteredRows.filter(upd.unfilteredIterator(), FBUtilities.nowInSeconds());
              DataOutputBuffer serialized21 = new DataOutputBuffer())
         {
-            LegacyLayout.serializeAsLegacyPartition(null, upd.unfilteredIterator(), serialized21, MessagingService.VERSION_21);
+            LegacyLayout.serializeAsLegacyPartition(null, upd.unfilteredIterator(), serialized21, VERSION_21);
             QueryProcessor.executeInternal(String.format("ALTER TABLE \"%s\".legacy_rt_rt_dc DROP s", KEYSPACE));
             try (DataInputBuffer in = new DataInputBuffer(serialized21.buffer(), false))
             {
-                try (UnfilteredRowIterator deser21 = LegacyLayout.deserializeLegacyPartition(in, MessagingService.VERSION_21, SerializationHelper.Flag.LOCAL, upd.partitionKey().getKey());
+                try (UnfilteredRowIterator deser21 = LegacyLayout.deserializeLegacyPartition(in, VERSION_21, SerializationHelper.Flag.LOCAL, upd.partitionKey().getKey());
                     RowIterator after = FilteredRows.filter(deser21, FBUtilities.nowInSeconds());)
                 {
                     while (before.hasNext() || after.hasNext())
@@ -303,4 +309,77 @@ public class LegacyLayoutTest
         }
     }
 
+    @Test
+    public void testDecodeLegacyPagedRangeCommandSerializer() throws IOException
+    {
+        /*
+         Run on 2.1
+         public static void main(String[] args) throws IOException, ConfigurationException
+         {
+             Gossiper.instance.start((int) (System.currentTimeMillis() / 1000));
+             Keyspace.setInitialized();
+             CFMetaData cfMetaData = CFMetaData.sparseCFMetaData("ks", "cf", UTF8Type.instance)
+             .addColumnDefinition(new ColumnDefinition("ks", "cf", new ColumnIdentifier("v", true), SetType.getInstance(Int32Type.instance, false), null, null, null, null, ColumnDefinition.Kind.REGULAR));
+             KSMetaData ksMetaData = KSMetaData.testMetadata("ks", SimpleStrategy.class, KSMetaData.optsWithRF(3), cfMetaData);
+             MigrationManager.announceNewKeyspace(ksMetaData);
+             RowPosition position = RowPosition.ForKey.get(ByteBufferUtil.EMPTY_BYTE_BUFFER, new Murmur3Partitioner());
+             SliceQueryFilter filter = new IdentityQueryFilter();
+             Composite cellName = CellNames.compositeSparseWithCollection(new ByteBuffer[0], Int32Type.instance.decompose(1), new ColumnIdentifier("v", true), false);
+             try (DataOutputBuffer buffer = new DataOutputBuffer(1024))
+             {
+                 PagedRangeCommand command = new PagedRangeCommand("ks", "cf", 1, AbstractBounds.bounds(position, true, position, true), filter, cellName, filter.finish(), Collections.emptyList(), 1, true);
+                 PagedRangeCommand.serializer.serialize(command, buffer, MessagingService.current_version);
+                 System.out.println(Hex.bytesToHex(buffer.toByteArray()));
+             }
+         }
+         */
+
+        DatabaseDescriptor.daemonInitialization();
+        Keyspace.setInitialized();
+        CFMetaData table = CFMetaData.Builder.create("ks", "cf")
+                                             .addPartitionKey("k", Int32Type.instance)
+                                             .addRegularColumn("v", SetType.getInstance(Int32Type.instance, true))
+                                             .build();
+        SchemaLoader.createKeyspace("ks", KeyspaceParams.simple(1));
+        MigrationManager.announceNewColumnFamily(table);
+
+        byte[] bytes = Hex.hexToBytes("00026b73000263660000000000000001fffffffe01000000088000000000000000010000000880000000000000000000000100000000007fffffffffffffff000b00017600000400000001000000000000000000000101");
+        ReadCommand.legacyPagedRangeCommandSerializer.deserialize(new DataInputBuffer(bytes), VERSION_21);
+    }
+
+    @Test
+    public void testDecodeCollectionPageBoundary()
+    {
+        CFMetaData table = CFMetaData.Builder.create("ks", "cf")
+                                             .addPartitionKey("k", Int32Type.instance)
+                                             .addRegularColumn("v", SetType.getInstance(Int32Type.instance, true))
+                                             .build();
+
+        ColumnDefinition v = table.getColumnDefinition(new ColumnIdentifier("v", false));
+        ByteBuffer bound = LegacyLayout.encodeCellName(table, Clustering.EMPTY, v.name.bytes, Int32Type.instance.decompose(1));
+
+        LegacyLayout.decodeSliceBound(table, bound, true);
+    }
+
+    @Test
+    public void testAsymmetricRTBoundSerializedSize()
+    {
+        CFMetaData table = CFMetaData.Builder.create("ks", "cf")
+                                             .addPartitionKey("k", Int32Type.instance)
+                                             .addClusteringColumn("c1", Int32Type.instance)
+                                             .addClusteringColumn("c2", Int32Type.instance)
+                                             .addRegularColumn("v", Int32Type.instance)
+                                             .build();
+
+        ByteBuffer one = Int32Type.instance.decompose(1);
+        ByteBuffer two = Int32Type.instance.decompose(2);
+        PartitionUpdate p = new PartitionUpdate(table, table.decorateKey(one), table.partitionColumns(), 0);
+        p.add(new RangeTombstone(Slice.make(new ClusteringBound(ClusteringPrefix.Kind.EXCL_START_BOUND, new ByteBuffer[] { one, one }),
+                                            new ClusteringBound(ClusteringPrefix.Kind.INCL_END_BOUND, new ByteBuffer[] { two })),
+                                 new DeletionTime(1, 1)
+        ));
+
+        LegacyLayout.fromUnfilteredRowIterator(null, p.unfilteredIterator());
+        LegacyLayout.serializedSizeAsLegacyPartition(null, p.unfilteredIterator(), VERSION_21);
+    }
 }

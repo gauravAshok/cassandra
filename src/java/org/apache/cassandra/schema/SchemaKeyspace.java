@@ -170,6 +170,7 @@ public final class SchemaKeyspace
                 + "table_name text,"
                 + "column_name text,"
                 + "dropped_time timestamp,"
+                + "kind text,"
                 + "type text,"
                 + "PRIMARY KEY ((keyspace_name), table_name, column_name))");
 
@@ -526,7 +527,7 @@ public final class SchemaKeyspace
         return builder;
     }
 
-    static void addTableToSchemaMutation(CFMetaData table, boolean withColumnsAndTriggers, Mutation.SimpleBuilder builder)
+    public static void addTableToSchemaMutation(CFMetaData table, boolean withColumnsAndTriggers, Mutation.SimpleBuilder builder)
     {
         Row.SimpleBuilder rowBuilder = builder.update(Tables)
                                               .row(table.cfName)
@@ -710,6 +711,7 @@ public final class SchemaKeyspace
         builder.update(DroppedColumns)
                .row(table.cfName, column.name)
                .add("dropped_time", new Date(TimeUnit.MICROSECONDS.toMillis(column.droppedTime)))
+               .add("kind", null != column.kind ? column.kind.toString().toLowerCase() : null)
                .add("type", expandUserTypes(column.type).asCQL3Type().toString());
     }
 
@@ -801,7 +803,7 @@ public final class SchemaKeyspace
 
         // dropped columns
         MapDifference<ByteBuffer, CFMetaData.DroppedColumn> droppedColumnDiff =
-        Maps.difference(oldView.metadata.getDroppedColumns(), oldView.metadata.getDroppedColumns());
+            Maps.difference(oldView.metadata.getDroppedColumns(), oldView.metadata.getDroppedColumns());
 
         // newly dropped columns
         for (CFMetaData.DroppedColumn column : droppedColumnDiff.entriesOnlyOnRight().values())
@@ -1145,6 +1147,10 @@ public final class SchemaKeyspace
     {
         String keyspace = row.getString("keyspace_name");
         String name = row.getString("column_name");
+
+        ColumnDefinition.Kind kind =
+            row.has("kind") ? ColumnDefinition.Kind.valueOf(row.getString("kind").toUpperCase())
+                            : null;
         /*
          * we never store actual UDT names in dropped column types (so that we can safely drop types if nothing refers to
          * them anymore), so before storing dropped columns in schema we expand UDTs to tuples. See expandUserTypes method.
@@ -1152,7 +1158,7 @@ public final class SchemaKeyspace
          */
         AbstractType<?> type = parse(keyspace, row.getString("type"), org.apache.cassandra.schema.Types.none());
         long droppedTime = TimeUnit.MILLISECONDS.toMicros(row.getLong("dropped_time"));
-        return new CFMetaData.DroppedColumn(name, type, droppedTime);
+        return new CFMetaData.DroppedColumn(name, kind, type, droppedTime);
     }
 
     private static Indexes fetchIndexes(String keyspace, String table)
