@@ -1057,7 +1057,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             try (LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.FLUSH, memtable.cfs.metadata().params.timeOrderedKey))
             {
                 List<Memtable.FlushRunnable> flushRunnables = null;
-                List<SSTableMultiWriter> flushResults = null;
+                List<SSTableMultiWriter> flushResults = new ArrayList<>();
 
                 try
                 {
