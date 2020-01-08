@@ -135,7 +135,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
                                        Collection<Index> indexes,
                                        LifecycleNewTracker lifecycleNewTracker)
     {
-        MetadataCollector collector = new MetadataCollector(metadata.get().comparator).sstableLevel(sstableLevel);
+        MetadataCollector collector = new MetadataCollector(metadata.get().comparator, metadata.get().params.timeOrderedKey).sstableLevel(sstableLevel);
         return create(descriptor, keyCount, repairedAt, pendingRepair, isTransient, metadata, collector, header, indexes, lifecycleNewTracker);
     }
 

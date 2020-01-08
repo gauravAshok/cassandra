@@ -149,7 +149,7 @@ public class StandaloneSplitter
 
             for (SSTableReader sstable : sstables)
             {
-                try (LifecycleTransaction transaction = LifecycleTransaction.offline(OperationType.UNKNOWN, sstable))
+                try (LifecycleTransaction transaction = LifecycleTransaction.offline(OperationType.UNKNOWN, sstable, cfs.metadata().params.timeOrderedKey))
                 {
                     new SSTableSplitter(cfs, transaction, options.sizeInMB).split();
                 }

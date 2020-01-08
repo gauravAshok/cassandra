@@ -77,12 +77,12 @@ public class Tracker
      * @param memtable Initial Memtable. Can be null.
      * @param loadsstables true to indicate to load SSTables (TODO: remove as this is only accessed from 2i)
      */
-    public Tracker(Memtable memtable, boolean loadsstables)
+    public Tracker(Memtable memtable, boolean loadsstables, boolean timeOrdereKey)
     {
         this.cfstore = memtable != null ? memtable.cfs : null;
         this.view = new AtomicReference<>();
         this.loadsstables = loadsstables;
-        this.reset(memtable);
+        this.reset(memtable, timeOrdereKey);
     }
 
     public LifecycleTransaction tryModify(SSTableReader sstable, OperationType operationType)
@@ -200,15 +200,25 @@ public class Tracker
         notifyAdded(sstables);
     }
 
-    /** (Re)initializes the tracker, purging all references. */
+    /**
+     * (Re)initializes the tracker, purging all references.
+     */
     @VisibleForTesting
-    public void reset(Memtable memtable)
+    public void reset(boolean timeOrderedKey)
+    {
+        reset(null, timeOrderedKey);
+    }
+
+    @VisibleForTesting
+    public void reset(Memtable memtable, boolean timeOrderedKey)
     {
         view.set(new View(memtable != null ? singletonList(memtable) : Collections.emptyList(),
                           Collections.emptyList(),
                           Collections.emptyMap(),
                           Collections.emptyMap(),
-                          SSTableIntervalTree.empty()));
+                          SSTableIntervalTree.empty(),
+                          timeOrderedKey ? Optional.of(SSTableTimeIntervalTree.empty()) : Optional.empty()
+        ));
     }
 
     public Throwable dropSSTablesIfInvalid(Throwable accumulate)

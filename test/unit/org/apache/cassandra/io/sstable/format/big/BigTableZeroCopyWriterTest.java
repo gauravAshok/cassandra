@@ -149,7 +149,7 @@ public class BigTableZeroCopyWriterTest
         Descriptor desc = store.newSSTableDescriptor(dir);
         TableMetadataRef metadata = Schema.instance.getTableMetadataRef(desc);
 
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM, metadata.get().params.timeOrderedKey);
         Set<Component> componentsToWrite = ImmutableSet.of(Component.DATA, Component.PRIMARY_INDEX,
                                                            Component.STATS);
 

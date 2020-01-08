@@ -234,6 +234,23 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     private volatile double crcCheckChance;
 
+    public static ICardinality getCardinality(SSTableReader sstable) throws IOException
+    {
+        if (sstable.openReason != OpenReason.EARLY)
+        {
+            CompactionMetadata metadata = (CompactionMetadata) sstable.descriptor.getMetadataSerializer().deserialize(sstable.descriptor, MetadataType.COMPACTION);
+            if (metadata != null)
+            {
+                return metadata.cardinalityEstimator;
+            }
+            else
+            {
+                logger.warn("Reading cardinality from Statistics.db failed for {}", sstable.getFilename());
+            }
+        }
+        return null;
+    }
+
     /**
      * Calculate approximate key count.
      * If cardinality estimator is available on all given sstables, then this method use them to estimate
@@ -259,20 +276,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
             try
             {
-                CompactionMetadata metadata = (CompactionMetadata) sstable.descriptor.getMetadataSerializer().deserialize(sstable.descriptor, MetadataType.COMPACTION);
-                // If we can't load the CompactionMetadata, we are forced to estimate the keys using the index
-                // summary. (CASSANDRA-10676)
-                if (metadata == null)
-                {
-                    logger.warn("Reading cardinality from Statistics.db failed for {}", sstable.getFilename());
-                    failed = true;
-                    break;
-                }
-
-                if (cardinality == null)
-                    cardinality = metadata.cardinalityEstimator;
-                else
-                    cardinality = cardinality.merge(metadata.cardinalityEstimator);
+                ICardinality c = getCardinality(sstable);
+                cardinality = cardinality == null ? c : cardinality.merge(c);
             }
             catch (IOException e)
             {

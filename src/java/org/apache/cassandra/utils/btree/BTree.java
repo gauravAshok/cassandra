@@ -150,7 +150,7 @@ public class BTree
             K k = it.next();
             values[i] = updateF.apply(k);
         }
-        if (updateF != UpdateFunction.noOp())
+        if (updateF != UpdateFunction.<K>noOp())
             updateF.allocated(ObjectSizes.sizeOfArray(values));
         return values;
     }
@@ -166,7 +166,7 @@ public class BTree
         int childNum = size / (TREE_SIZE[level - 1] + 1) + 1;
 
         V[] values = (V[]) new Object[childNum * 2];
-        if (updateF != UpdateFunction.noOp())
+        if (updateF != UpdateFunction.<K>noOp())
             updateF.allocated(ObjectSizes.sizeOfArray(values));
 
         int[] indexOffsets = new int[childNum];

@@ -70,6 +70,9 @@ public abstract class SSTable
     public static final int TOMBSTONE_HISTOGRAM_SPOOL_SIZE = 100000;
     public static final int TOMBSTONE_HISTOGRAM_TTL_ROUND_SECONDS = Integer.valueOf(System.getProperty("cassandra.streaminghistogram.roundseconds", "60"));
 
+    public static final int DATA_SSTABLE_LVL = 0;
+    public static final int TOMBSTONE_SSTABLE_LVL = 1;
+
     public final Descriptor descriptor;
     protected final Set<Component> components;
     public final boolean compression;

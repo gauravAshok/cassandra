@@ -17,15 +17,16 @@
  */
 package org.apache.cassandra.db;
 
-import java.nio.ByteBuffer;
-import java.util.Comparator;
-
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.dht.Token.KeyBound;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.MurmurHash;
 import org.apache.cassandra.utils.IFilter.FilterKey;
+import org.apache.cassandra.utils.MurmurHash;
+import org.apache.cassandra.utils.TimeWindow;
+
+import java.nio.ByteBuffer;
+import java.util.Comparator;
 
 /**
  * Represents a decorated key, handy for certain operations
@@ -136,5 +137,24 @@ public abstract class DecoratedKey implements PartitionPosition, FilterKey
     {
         ByteBuffer key = getKey();
         MurmurHash.hash3_x64_128(key, key.position(), key.remaining(), 0, dest);
+    }
+
+    public TimeWindow interpretTimeBucket()
+    {
+        ByteBuffer buffer = getKey();
+        return interpretTimeBucket(buffer);
+    }
+
+    public static TimeWindow interpretTimeBucket(ByteBuffer buffer)
+    {
+        // first 2 columns are timestamp (long) and duration (int).
+        // offset   : value
+        // 0        : 8
+        // 2        : timestamp
+        // 10       : 1 byte of delimiter
+        // 11       : 4
+        // 13       : duration
+        // TODO: it is tightly coupled with the types. We need the first 2 columns of type long and int respectively.
+        return new TimeWindow(buffer.getLong(buffer.position() + 2), buffer.getInt(buffer.position() + 13));
     }
 }

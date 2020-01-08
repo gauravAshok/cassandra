@@ -94,7 +94,7 @@ public class MetadataSerializerTest
         CommitLogPosition cllb = new CommitLogPosition(9L, 12);
 
         TableMetadata cfm = SchemaLoader.standardCFMD("ks1", "cf1").build();
-        MetadataCollector collector = new MetadataCollector(cfm.comparator)
+        MetadataCollector collector = new MetadataCollector(cfm.comparator, cfm.params.timeOrderedKey)
                                           .commitLogIntervals(new IntervalSet<>(cllb, club));
 
         String partitioner = RandomPartitioner.class.getCanonicalName();

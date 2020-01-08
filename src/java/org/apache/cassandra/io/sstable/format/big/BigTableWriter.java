@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.db.lifecycle.LifecycleNewTracker;
+import org.apache.cassandra.db.partitions.PartitionStatisticsCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -214,6 +215,7 @@ public class BigTableWriter extends SSTableWriter
     {
         private final MetadataCollector collector;
         private int cellCount;
+        private long partitionTombstones, rowTombstones, rangeTombstones;
 
         StatsCollector(MetadataCollector collector)
         {
@@ -233,6 +235,10 @@ public class BigTableWriter extends SSTableWriter
         {
             collector.updateClusteringValues(row.clustering());
             cellCount += Rows.collectStats(row, collector);
+            if (!row.deletion().isLive())
+            {
+                rowTombstones++;
+            }
             return row;
         }
 
@@ -245,10 +251,12 @@ public class BigTableWriter extends SSTableWriter
                 RangeTombstoneBoundaryMarker bm = (RangeTombstoneBoundaryMarker)marker;
                 collector.update(bm.endDeletionTime());
                 collector.update(bm.startDeletionTime());
+                rangeTombstones += 2;
             }
             else
             {
                 collector.update(((RangeTombstoneBoundMarker)marker).deletionTime());
+                ++rangeTombstones;
             }
             return marker;
         }
@@ -256,13 +264,30 @@ public class BigTableWriter extends SSTableWriter
         @Override
         public void onPartitionClose()
         {
+            assert partitionTombstones == 0 || partitionTombstones == 1;
             collector.addCellPerPartitionCount(cellCount);
+            if (partitionTombstones == 1)
+            {
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.PARTITION, 1);
+            }
+            else
+            {
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.ROW, rowTombstones);
+                collector.updateDeletionFor(PartitionStatisticsCollector.DeletionFor.RANGE, rangeTombstones);
+            }
+            partitionTombstones = 0;
+            rowTombstones = 0;
+            rangeTombstones = 0;
         }
 
         @Override
         public DeletionTime applyToDeletion(DeletionTime deletionTime)
         {
             collector.update(deletionTime);
+            if (!deletionTime.isLive())
+            {
+                partitionTombstones++;
+            }
             return deletionTime;
         }
     }

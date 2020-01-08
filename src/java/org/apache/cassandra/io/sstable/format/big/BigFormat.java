@@ -21,8 +21,6 @@ import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
 
-import com.google.common.base.Preconditions;
-
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
@@ -117,7 +115,7 @@ public class BigFormat implements SSTableFormat
     // we always incremented the major version.
     static class BigVersion extends Version
     {
-        public static final String current_version = "na";
+        public static final String current_version = "naa";
         public static final String earliest_supported_version = "ma";
 
         // ma (3.0.0): swap bf hash order
@@ -127,6 +125,7 @@ public class BigFormat implements SSTableFormat
         // md (3.0.18, 3.11.4): corrected sstable min/max clustering
 
         // na (4.0.0): uncompressed chunks, pending repair session, isTransient, checksummed sstable metadata file, new Bloomfilter format
+        // naa (4.0.0): [min, max) range for first partition key for selected tables and tombstone counts in sstable metadata
         //
         // NOTE: when adding a new version, please add that to LegacySSTableTest, too.
 
@@ -139,6 +138,8 @@ public class BigFormat implements SSTableFormat
         private final boolean hasPendingRepair;
         private final boolean hasMetadataChecksum;
         private final boolean hasIsTransient;
+        private final boolean hasFirstKeyRange;
+        private final boolean hasTombstoneCounts;
 
         /**
          * CASSANDRA-9067: 4.0 bloom filter representation changed (two longs just swapped)
@@ -161,6 +162,8 @@ public class BigFormat implements SSTableFormat
             hasIsTransient = version.compareTo("na") >= 0;
             hasMetadataChecksum = version.compareTo("na") >= 0;
             hasOldBfFormat = version.compareTo("na") < 0;
+            hasFirstKeyRange = version.compareTo("na") > 0 && version.length() > 2;
+            hasTombstoneCounts = version.compareTo("na") > 0 && version.length() > 2;
         }
 
         @Override
@@ -208,6 +211,16 @@ public class BigFormat implements SSTableFormat
         public boolean hasAccurateMinMax()
         {
             return hasAccurateMinMax;
+        }
+
+        public boolean hasFirstKeyRange()
+        {
+            return hasFirstKeyRange;
+        }
+
+        public boolean hasTombstoneCounts()
+        {
+            return hasTombstoneCounts;
         }
 
         public boolean isCompatible()

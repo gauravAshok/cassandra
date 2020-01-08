@@ -846,6 +846,12 @@ public final class TableMetadata
             return this;
         }
 
+        public Builder timeOrderedKey(boolean val)
+        {
+            params.timeOrderedKey(val);
+            return this;
+        }
+
         public Builder flags(Set<Flag> val)
         {
             flags = val;

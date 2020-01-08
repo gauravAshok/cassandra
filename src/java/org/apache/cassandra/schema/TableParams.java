@@ -54,7 +54,8 @@ public final class TableParams
         ADDITIONAL_WRITE_POLICY,
         CRC_CHECK_CHANCE,
         CDC,
-        READ_REPAIR;
+        READ_REPAIR,
+        TIME_ORDERED_KEY;
 
         @Override
         public String toString()
@@ -79,6 +80,7 @@ public final class TableParams
     public final ImmutableMap<String, ByteBuffer> extensions;
     public final boolean cdc;
     public final ReadRepairStrategy readRepair;
+    public final boolean timeOrderedKey;
 
     private TableParams(Builder builder)
     {
@@ -100,6 +102,7 @@ public final class TableParams
         extensions = builder.extensions;
         cdc = builder.cdc;
         readRepair = builder.readRepair;
+        timeOrderedKey = builder.timeOrderedKey;
     }
 
     public static Builder builder()
@@ -124,7 +127,8 @@ public final class TableParams
                             .additionalWritePolicy(params.additionalWritePolicy)
                             .extensions(params.extensions)
                             .cdc(params.cdc)
-                            .readRepair(params.readRepair);
+                            .readRepair(params.readRepair)
+                            .timeOrderedKey(params.timeOrderedKey);
     }
 
     public Builder unbuild()
@@ -208,7 +212,8 @@ public final class TableParams
             && compression.equals(p.compression)
             && extensions.equals(p.extensions)
             && cdc == p.cdc
-            && readRepair == p.readRepair;
+            && readRepair == p.readRepair
+            && timeOrderedKey == p.timeOrderedKey;
     }
 
     @Override
@@ -228,7 +233,8 @@ public final class TableParams
                                 compression,
                                 extensions,
                                 cdc,
-                                readRepair);
+                                readRepair,
+                                timeOrderedKey);
     }
 
     @Override
@@ -250,6 +256,7 @@ public final class TableParams
                           .add(Option.EXTENSIONS.toString(), extensions)
                           .add(Option.CDC.toString(), cdc)
                           .add(Option.READ_REPAIR.toString(), readRepair)
+                          .add(Option.TIME_ORDERED_KEY.toString(), timeOrderedKey)
                           .toString();
     }
 
@@ -271,6 +278,7 @@ public final class TableParams
         private ImmutableMap<String, ByteBuffer> extensions = ImmutableMap.of();
         private boolean cdc;
         private ReadRepairStrategy readRepair = ReadRepairStrategy.BLOCKING;
+        private boolean timeOrderedKey = false;
 
         public Builder()
         {
@@ -368,6 +376,12 @@ public final class TableParams
         public Builder readRepair(ReadRepairStrategy val)
         {
             readRepair = val;
+            return this;
+        }
+
+        public Builder timeOrderedKey(boolean val)
+        {
+            timeOrderedKey = val;
             return this;
         }
 

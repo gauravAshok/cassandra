@@ -1445,7 +1445,7 @@ public class CompactionManager implements CompactionManagerMBean
                                     pendingRepair,
                                     isTransient,
                                     cfs.metadata,
-                                    new MetadataCollector(sstables, cfs.metadata().comparator, minLevel),
+                                    new MetadataCollector(sstables, cfs.metadata().comparator, cfs.metadata().params.timeOrderedKey, minLevel),
                                     SerializationHeader.make(cfs.metadata(), sstables),
                                     cfs.indexManager.listIndexes(),
                                     txn);
@@ -1459,7 +1459,7 @@ public class CompactionManager implements CompactionManagerMBean
      * @param txn a transaction over the repaired sstables to anticompact
      * @param ranges full and transient ranges to be placed into one of the new sstables. The repaired table will be tracked via
      *   the {@link org.apache.cassandra.io.sstable.metadata.StatsMetadata#pendingRepair} field.
-     * @param sessionID the repair session we're anti-compacting for
+     * @param pendingRepair the repair session we're anti-compacting for
      * @param isCancelled function that indicates if active anti-compaction should be canceled
      */
     private void doAntiCompaction(ColumnFamilyStore cfs,

@@ -74,7 +74,7 @@ public class DefaultCompactionWriter extends CompactionAwareWriter
                                                     pendingRepair,
                                                     isTransient,
                                                     cfs.metadata,
-                                                    new MetadataCollector(txn.originals(), cfs.metadata().comparator, sstableLevel),
+                                                    new MetadataCollector(txn.originals(), cfs.metadata().comparator, cfs.metadata().params.timeOrderedKey, sstableLevel),
                                                     SerializationHeader.make(cfs.metadata(), nonExpiredSSTables),
                                                     cfs.indexManager.listIndexes(),
                                                     txn);

@@ -103,6 +103,10 @@ public final class AtomicBTreePartition extends AbstractBTreePartition
         return metadata.get();
     }
 
+    public RowsType rowTypes() {
+        return ref.rowsType;
+    }
+
     protected boolean canHaveShadowedData()
     {
         return true;
@@ -142,7 +146,7 @@ public final class AtomicBTreePartition extends AbstractBTreePartition
         Object[] tree = BTree.update(current.tree, update.metadata().comparator, update, update.rowCount(), updater);
         EncodingStats newStats = current.stats.mergeWith(update.stats());
 
-        if (tree != null && refUpdater.compareAndSet(this, current, new Holder(columns, tree, deletionInfo, staticRow, newStats)))
+        if (tree != null && refUpdater.compareAndSet(this, current, new Holder(columns, tree, deletionInfo, staticRow, newStats, current.rowsType.or(update.holder().rowsType))))
         {
             updater.finish();
             return new long[]{ updater.dataSize, updater.colUpdateTimeDelta };

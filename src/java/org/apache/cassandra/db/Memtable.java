@@ -26,6 +26,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 
+import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.io.sstable.SSTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,15 +42,12 @@ import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.db.partitions.*;
-import org.apache.cassandra.db.rows.EncodingStats;
-import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.index.transactions.UpdateTransaction;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableMultiWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
-import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
@@ -146,12 +145,12 @@ public class Memtable implements Comparable<Memtable>
 
     // ONLY to be used for testing, to create a mock Memtable
     @VisibleForTesting
-    public Memtable(TableMetadata metadata)
+    public Memtable(ColumnFamilyStore cfs)
     {
-        this.initialComparator = metadata.comparator;
-        this.cfs = null;
-        this.allocator = null;
-        this.columnsCollector = new ColumnsCollector(metadata.regularAndStaticColumns());
+        this.initialComparator = cfs.metadata().comparator;
+        this.cfs = cfs;
+        this.allocator = MEMORY_POOL.newAllocator();
+        this.columnsCollector = new ColumnsCollector(cfs.metadata().regularAndStaticColumns());
     }
 
     public MemtableAllocator getAllocator()
@@ -300,7 +299,7 @@ public class Memtable implements Comparable<Memtable>
         List<PartitionPosition> boundaries = diskBoundaries.positions;
         List<Directories.DataDirectory> locations = diskBoundaries.directories;
         if (boundaries == null)
-            return Collections.singletonList(new FlushRunnable(txn));
+            return Collections.singletonList(new FlushRunnable(txn, cfs.metadata().params.timeOrderedKey));
 
         List<FlushRunnable> runnables = new ArrayList<>(boundaries.size());
         PartitionPosition rangeStart = cfs.getPartitioner().getMinimumToken().minKeyBound();
@@ -309,7 +308,7 @@ public class Memtable implements Comparable<Memtable>
             for (int i = 0; i < boundaries.size(); i++)
             {
                 PartitionPosition t = boundaries.get(i);
-                runnables.add(new FlushRunnable(rangeStart, t, locations.get(i), txn));
+                runnables.add(new FlushRunnable(rangeStart, t, locations.get(i), txn, cfs.metadata().params.timeOrderedKey));
                 rangeStart = t;
             }
             return runnables;
@@ -394,33 +393,37 @@ public class Memtable implements Comparable<Memtable>
         liveDataSize.addAndGet(1L * 1024 * 1024 * 1024 * 1024 * 1024);
     }
 
-    class FlushRunnable implements Callable<SSTableMultiWriter>
+    class FlushRunnable implements Callable<SSTableMultiWriter[]>
     {
         private final long estimatedSize;
         private final ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> toFlush;
 
         private final boolean isBatchLogTable;
         private final SSTableMultiWriter writer;
+        private final SSTableMultiWriter tombstoneWriter;
 
         // keeping these to be able to log what we are actually flushing
         private final PartitionPosition from;
         private final PartitionPosition to;
 
-        FlushRunnable(PartitionPosition from, PartitionPosition to, Directories.DataDirectory flushLocation, LifecycleTransaction txn)
+        private final boolean split;
+
+        FlushRunnable(PartitionPosition from, PartitionPosition to, Directories.DataDirectory flushLocation, LifecycleTransaction txn, boolean split)
         {
-            this(partitions.subMap(from, to), flushLocation, from, to, txn);
+            this(partitions.subMap(from, to), flushLocation, from, to, txn, split);
         }
 
-        FlushRunnable(LifecycleTransaction txn)
+        FlushRunnable(LifecycleTransaction txn, boolean split)
         {
-            this(partitions, null, null, null, txn);
+            this(partitions, null, null, null, txn, split);
         }
 
-        FlushRunnable(ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> toFlush, Directories.DataDirectory flushLocation, PartitionPosition from, PartitionPosition to, LifecycleTransaction txn)
+        FlushRunnable(ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> toFlush, Directories.DataDirectory flushLocation, PartitionPosition from, PartitionPosition to, LifecycleTransaction txn, boolean split)
         {
             this.toFlush = toFlush;
             this.from = from;
             this.to = to;
+            this.split = split;
             long keySize = 0;
             for (PartitionPosition key : toFlush.keySet())
             {
@@ -436,10 +439,24 @@ public class Memtable implements Comparable<Memtable>
             this.isBatchLogTable = cfs.name.equals(SystemKeyspace.BATCHES) && cfs.keyspace.getName().equals(SchemaConstants.SYSTEM_KEYSPACE_NAME);
 
             if (flushLocation == null)
-                writer = createFlushWriter(txn, cfs.newSSTableDescriptor(getDirectories().getWriteableLocationAsFile(estimatedSize)), columnsCollector.get(), statsCollector.get());
+            {
+                writer = createFlushWriter(txn, cfs.newSSTableDescriptor(getDirectories().getWriteableLocationAsFile(estimatedSize)), columnsCollector.get(),
+                                           statsCollector.get(), SSTable.DATA_SSTABLE_LVL);
+                tombstoneWriter = split
+                                  ? createFlushWriter(txn, cfs.newSSTableDescriptor(getDirectories().getWriteableLocationAsFile((long) (keySize * 1.5))),
+                                                      columnsCollector.get(), statsCollector.get(), SSTable.TOMBSTONE_SSTABLE_LVL)
+                                  : null;
+            }
             else
-                writer = createFlushWriter(txn, cfs.newSSTableDescriptor(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get());
+            {
 
+                writer = createFlushWriter(txn, cfs.newSSTableDescriptor(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(),
+                                           statsCollector.get(), SSTable.DATA_SSTABLE_LVL);
+                tombstoneWriter = split
+                                  ? createFlushWriter(txn, cfs.newSSTableDescriptor(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(),
+                                                      statsCollector.get(), SSTable.TOMBSTONE_SSTABLE_LVL)
+                                  : null;
+            }
         }
 
         protected Directories getDirectories()
@@ -471,19 +488,44 @@ public class Memtable implements Comparable<Memtable>
 
                 if (!partition.isEmpty())
                 {
-                    try (UnfilteredRowIterator iter = partition.unfilteredIterator())
+                    if(split)
                     {
-                        writer.append(iter);
+                        // no tombstones
+                        try (UnfilteredRowIterator iter = new TombstoneMaskUnfilteredRowIterator(partition))
+                        {
+                            writer.append(iter);
+                        }
+
+                        // tombstones only
+                        try (UnfilteredRowIterator iter = new TombstoneMaskUnfilteredRowIterator(partition, false))
+                        {
+                            tombstoneWriter.append(iter);
+                        }
+                    }
+                    else
+                    {
+                        try (UnfilteredRowIterator iter = partition.unfilteredIterator())
+                        {
+                            writer.append(iter);
+                        }
                     }
                 }
             }
 
-            long bytesFlushed = writer.getFilePointer();
-            if (logger.isDebugEnabled())
-                logger.debug("Completed flushing {} ({}) for commitlog position {}",
+            long dataBytesFlushed = writer.getFilePointer();
+            long tombstonesBytesFlushed = tombstoneWriter != null ? tombstoneWriter.getFilePointer() : 0;
+
+            if(logger.isDebugEnabled())
+            {
+                logger.debug("Completed flushing {} ({}) & {} ({}) for commitlog position {}",
                              writer.getFilename(),
-                             FBUtilities.prettyPrintMemory(bytesFlushed),
+                             FBUtilities.prettyPrintMemory(dataBytesFlushed),
+                             tombstoneWriter != null ? tombstoneWriter.getFilename() : null,
+                             FBUtilities.prettyPrintMemory(tombstonesBytesFlushed),
                              commitLogUpperBound);
+            }
+
+            long bytesFlushed = dataBytesFlushed + tombstonesBytesFlushed;
             // Update the metrics
             cfs.metric.bytesFlushed.inc(bytesFlushed);
 
@@ -494,10 +536,11 @@ public class Memtable implements Comparable<Memtable>
         public SSTableMultiWriter createFlushWriter(LifecycleTransaction txn,
                                                     Descriptor descriptor,
                                                     RegularAndStaticColumns columns,
-                                                    EncodingStats stats)
+                                                    EncodingStats stats,
+                                                    int level)
         {
-            MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata().comparator)
-                    .commitLogIntervals(new IntervalSet<>(commitLogLowerBound.get(), commitLogUpperBound.get()));
+            MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata().comparator, cfs.metadata().params.timeOrderedKey)
+                    .commitLogIntervals(new IntervalSet<>(commitLogLowerBound.get(), commitLogUpperBound.get())).sstableLevel(level);
 
             return cfs.createSSTableMultiWriter(descriptor,
                                                 toFlush.size(),
@@ -509,10 +552,174 @@ public class Memtable implements Comparable<Memtable>
         }
 
         @Override
-        public SSTableMultiWriter call()
+        public SSTableMultiWriter[] call()
         {
             writeSortedContents();
-            return writer;
+            if (tombstoneWriter != null)
+            {
+                return new SSTableMultiWriter[]{writer, tombstoneWriter};
+            }
+            else
+            {
+                return new SSTableMultiWriter[]{writer};
+            }
+        }
+    }
+
+    /**
+     * Tomebstone masking iterator. By default iterator does not reveal any tombstones.
+     * invertMask allows to only iterate on tombstones
+     */
+    private static class TombstoneMaskUnfilteredRowIterator implements UnfilteredRowIterator
+    {
+        private static final boolean optimizeFlush = Boolean.getBoolean("cassandra.optimizeMemtableFlush");
+
+        private final UnfilteredRowIterator baseIterator;
+        private final boolean maskTombstones;
+        private final AbstractBTreePartition.RowsType rowTypes;
+
+        private Unfiltered item;
+        private boolean itemConsumed = true;
+
+        TombstoneMaskUnfilteredRowIterator(AtomicBTreePartition partition, boolean maskTombstones) {
+            this.baseIterator = partition.unfilteredIterator();
+            this.rowTypes = partition.rowTypes();
+            this.maskTombstones = maskTombstones;
+        }
+
+        TombstoneMaskUnfilteredRowIterator(AtomicBTreePartition partition)
+        {
+            this(partition, true);
+        }
+
+        @Override
+        public DeletionTime partitionLevelDeletion()
+        {
+            /**
+             * L = Live, T = Tombstone
+             *                  maskTombstones: true  false
+             * partitionLive():
+             *   true(L)                          L     L
+             *   false(T)                         L     T
+             */
+
+            if(baseIterator.partitionLevelDeletion().isLive() || !maskTombstones) {
+                return baseIterator.partitionLevelDeletion();
+            }
+
+            return DeletionTime.LIVE;
+        }
+
+        @Override
+        public EncodingStats stats()
+        {
+            return baseIterator.stats();
+        }
+
+        @Override
+        public TableMetadata metadata()
+        {
+            return baseIterator.metadata();
+        }
+
+        @Override
+        public boolean isReverseOrder()
+        {
+            return baseIterator.isReverseOrder();
+        }
+
+        @Override
+        public RegularAndStaticColumns columns()
+        {
+            return baseIterator.columns();
+        }
+
+        @Override
+        public DecoratedKey partitionKey()
+        {
+            return baseIterator.partitionKey();
+        }
+
+        @Override
+        public Row staticRow()
+        {
+            /**
+             * Making an assumption that static columns will never be set to null. it either has the data or not. (E = empty)
+             *              maskTombstone: true false
+             *   staticRow:
+             *      empty                   E     E
+             *    notEmpty                 Row    E
+             */
+
+            if(!maskTombstones || baseIterator.staticRow().isEmpty()) {
+                return Rows.EMPTY_STATIC_ROW;
+            }
+
+            return baseIterator.staticRow();
+        }
+
+        @Override
+        public void close()
+        {
+            baseIterator.close();
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            if(optimizeFlush) {
+                if(maskTombstones && rowTypes == AbstractBTreePartition.RowsType.TOMBSTONE)
+                    return false;
+
+                if(!maskTombstones && rowTypes == AbstractBTreePartition.RowsType.DATA)
+                    return false;
+            }
+
+            if(!itemConsumed)
+                return item != null;
+
+            if(!baseIterator.hasNext())
+                return false;
+
+            boolean hasNext = true;
+            do
+            {
+                item = baseIterator.next();
+            }
+            while (shouldMask(item) && (hasNext = baseIterator.hasNext()));
+
+            if(!hasNext) {
+                item = null;
+            }
+
+            itemConsumed = false;
+            return hasNext;
+        }
+
+        private boolean shouldMask(Unfiltered unfiltered) {
+            if(unfiltered.isRangeTombstoneMarker()) {
+                return maskTombstones;
+            }
+
+            Row row = (Row) unfiltered;
+            if(row.deletion().isLive()) {
+                return !maskTombstones;
+            }
+
+            return maskTombstones;
+        }
+
+        @Override
+        public Unfiltered next()
+        {
+            if(itemConsumed) {
+                // get the next item first
+                hasNext();
+            }
+            assert item != null : "probably hasNext was not called on the unfilteredIterator";
+
+            itemConsumed = true;
+            return item;
         }
     }
 

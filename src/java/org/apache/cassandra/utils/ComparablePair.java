@@ -15,28 +15,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.db.partitions;
 
-import org.apache.cassandra.db.DeletionTime;
-import org.apache.cassandra.db.LivenessInfo;
-import org.apache.cassandra.db.rows.Cell;
+package org.apache.cassandra.utils;
 
-public interface PartitionStatisticsCollector
-{
-    public enum DeletionFor
-    {
-        PARTITION,
-        ROW,
-        RANGE
+public class ComparablePair<T1 extends Comparable<T1>, T2 extends Comparable<T2>> extends Pair<T1, T2> implements Comparable<ComparablePair<T1, T2>> {
+    protected ComparablePair(T1 left, T2 right) {
+        super(left, right);
     }
 
-    public void update(LivenessInfo info);
-    public void update(DeletionTime deletionTime);
-    public void update(Cell cell);
-    public void updateColumnSetPerRow(long columnSetInRow);
-    public void updateHasLegacyCounterShards(boolean hasLegacyCounterShards);
+    @Override
+    public int compareTo(ComparablePair<T1, T2> o) {
+        if (o == null) {
+            return 1;
+        }
+        int leftCompare = this.left.compareTo(o.left);
+        if (leftCompare != 0) {
+            return leftCompare;
+        }
+        return this.right.compareTo(o.right);
+    }
 
-    default public void updateDeletionFor(DeletionFor deletionFor, long delta)
-    {
+    public static <X extends Comparable<X>, Y extends Comparable<Y>> ComparablePair<X, Y> create(X left, Y right) {
+        return new ComparablePair<>(left, right);
     }
 }
