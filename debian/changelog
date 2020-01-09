@@ -1,3 +1,11 @@
+cassandra (4.0~alpha2-vrd.3) UNRELEASED; urgency=medium
+
+  * New internal release. Introduced a new compaction strategy called TOKCS.
+  * Modified how TOKCS estimates remaining tasks.
+  * Added support for anticompaction in TOKCS, keepSSTableLevels when TOKCS can be used.
+
+ -- Gaurav Ashok <gaurav.ashok@flipkart.com>  Wed, 09 Jan 2020 13:08:05 +0530
+
 cassandra (4.0~alpha2) unstable; urgency=medium
 
   * New release
