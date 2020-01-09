@@ -20,10 +20,7 @@ package org.apache.cassandra.db.streaming;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -73,6 +70,20 @@ public class CassandraOutgoingFile implements OutgoingStream
                                  List<SSTableReader.PartitionPositionBounds> sections, List<Range<Token>> normalizedRanges,
                                  long estimatedKeys)
     {
+        this(operation, ref, sections, normalizedRanges, estimatedKeys, Optional.empty());
+    }
+
+    public CassandraOutgoingFile(StreamOperation operation, Ref<SSTableReader> ref,
+                                 List<SSTableReader.PartitionPositionBounds> sections, List<Range<Token>> normalizedRanges,
+                                 long estimatedKeys, boolean keepSSTablesLevel)
+    {
+        this(operation, ref, sections, normalizedRanges, estimatedKeys, Optional.of(keepSSTablesLevel));
+    }
+
+    private CassandraOutgoingFile(StreamOperation operation, Ref<SSTableReader> ref,
+                                 List<SSTableReader.PartitionPositionBounds> sections, List<Range<Token>> normalizedRanges,
+                                 long estimatedKeys, Optional<Boolean> maybeKeepSSTablesLevel)
+    {
         Preconditions.checkNotNull(ref.get());
         Range.assertNormalized(normalizedRanges);
         this.ref = ref;
@@ -83,7 +94,9 @@ public class CassandraOutgoingFile implements OutgoingStream
         this.manifest = getComponentManifest(ref.get());
 
         SSTableReader sstable = ref.get();
-        keepSSTableLevel = operation == StreamOperation.BOOTSTRAP || operation == StreamOperation.REBUILD;
+        this.keepSSTableLevel = maybeKeepSSTablesLevel
+                .orElseGet(() -> operation == StreamOperation.BOOTSTRAP || operation == StreamOperation.REBUILD);
+
         this.header =
             CassandraStreamHeader.builder()
                                  .withSSTableFormat(sstable.descriptor.formatType)

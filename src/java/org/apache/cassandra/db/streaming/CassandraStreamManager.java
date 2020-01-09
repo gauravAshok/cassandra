@@ -157,8 +157,9 @@ public class CassandraStreamManager implements TableStreamManager
                     ref.release();
                     continue;
                 }
+                boolean keepSSTableLevel = cfs.metadata().params.timeOrderedKey;
                 streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, ranges,
-                                                      sstable.estimatedKeysForRanges(ranges)));
+                                                      sstable.estimatedKeysForRanges(ranges), keepSSTableLevel));
             }
 
             return streams;

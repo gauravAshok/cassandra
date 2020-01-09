@@ -323,6 +323,31 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         return uncheckedOptions;
     }
 
+    @Override
+    public Collection<Collection<SSTableReader>> groupSSTablesForAntiCompaction(Collection<SSTableReader> sstablesToGroup)
+    {
+        int groupSize = 1;
+        List<SSTableReader> sortedSSTablesToGroup = new ArrayList<>(sstablesToGroup);
+        sortedSSTablesToGroup.sort(Comparator.comparingLong(s -> s.getSSTableMetadata().minKey));
+
+        Collection<Collection<SSTableReader>> groupedSSTables = new ArrayList<>();
+        Collection<SSTableReader> currGroup = new ArrayList<>(groupSize);
+
+        for (SSTableReader sstable : sortedSSTablesToGroup)
+        {
+            currGroup.add(sstable);
+            if (currGroup.size() == groupSize)
+            {
+                groupedSSTables.add(currGroup);
+                currGroup = new ArrayList<>(groupSize);
+            }
+        }
+
+        if (currGroup.size() != 0)
+            groupedSSTables.add(currGroup);
+        return groupedSSTables;
+    }
+
     public String toString()
     {
         return String.format("TimeOrderedKeyCompactionStrategy{window:%d sec, split:%d, local:%dMB/%f%%, global:%dMB/%f%%}",
