@@ -17,9 +17,12 @@
  */
 package org.apache.cassandra.repair.messages;
 
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
 import com.google.common.base.Joiner;
+import org.apache.cassandra.repair.TimeRange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +45,8 @@ public class RepairOption
     public static final String INCREMENTAL_KEY = "incremental";
     public static final String JOB_THREADS_KEY = "jobThreads";
     public static final String RANGES_KEY = "ranges";
+    public static final String TIME_RANGE_START = "timeRangeStart";
+    public static final String TIME_RANGE_END = "timeRangeEnd";
     public static final String COLUMNFAMILIES_KEY = "columnFamilies";
     public static final String DATACENTERS_KEY = "dataCenters";
     public static final String HOSTS_KEY = "hosts";
@@ -189,7 +194,11 @@ public class RepairOption
         }
         boolean asymmetricSyncing = Boolean.parseBoolean(options.get(OPTIMISE_STREAMS_KEY));
 
-        RepairOption option = new RepairOption(parallelism, primaryRange, incremental, trace, jobThreads, ranges, !ranges.isEmpty(), pullRepair, force, previewKind, asymmetricSyncing);
+        TimeRange timeRange = new TimeRange(
+                parseTimestamp(options.get(TIME_RANGE_START), 0, "start-time"),
+                parseTimestamp(options.get(TIME_RANGE_END), Long.MAX_VALUE, "end-time"));
+
+        RepairOption option = new RepairOption(parallelism, primaryRange, incremental, trace, jobThreads, ranges, !ranges.isEmpty(), pullRepair, force, previewKind, asymmetricSyncing, timeRange);
 
         // data centers
         String dataCentersStr = options.get(DATACENTERS_KEY);
@@ -258,6 +267,36 @@ public class RepairOption
         return option;
     }
 
+    /***
+     * Parse timestamp given as seconds
+     * @param value
+     * @param defaultValue
+     * @param tag
+     * @return timestamp in milliseconds
+     */
+    private static long parseTimestamp(String value, long defaultValue, String tag)
+    {
+        if (value == null)
+        {
+            return defaultValue;
+        }
+
+        try {
+            return OffsetDateTime.parse(value).toEpochSecond() * 1000;
+        }
+        catch (Exception e)
+        { }
+
+        try
+        {
+            return Long.parseLong(value) * 1000;
+        }
+        catch (Exception e)
+        {
+            throw new IllegalArgumentException(tag + " is not a ISO8601 date time or a long timestamp");
+        }
+    }
+
     private final RepairParallelism parallelism;
     private final boolean primaryRange;
     private final boolean incremental;
@@ -274,7 +313,9 @@ public class RepairOption
     private final Collection<String> hosts = new HashSet<>();
     private final Collection<Range<Token>> ranges = new HashSet<>();
 
-    public RepairOption(RepairParallelism parallelism, boolean primaryRange, boolean incremental, boolean trace, int jobThreads, Collection<Range<Token>> ranges, boolean isSubrangeRepair, boolean pullRepair, boolean forceRepair, PreviewKind previewKind, boolean optimiseStreams)
+    private final TimeRange timeRange;
+
+    public RepairOption(RepairParallelism parallelism, boolean primaryRange, boolean incremental, boolean trace, int jobThreads, Collection<Range<Token>> ranges, boolean isSubrangeRepair, boolean pullRepair, boolean forceRepair, PreviewKind previewKind, boolean optimiseStreams, TimeRange timeRange)
     {
         if (FBUtilities.isWindows &&
             (DatabaseDescriptor.getDiskAccessMode() != Config.DiskAccessMode.standard || DatabaseDescriptor.getIndexAccessMode() != Config.DiskAccessMode.standard) &&
@@ -296,6 +337,7 @@ public class RepairOption
         this.forceRepair = forceRepair;
         this.previewKind = previewKind;
         this.optimiseStreams = optimiseStreams;
+        this.timeRange = timeRange;
     }
 
     public RepairParallelism getParallelism()
@@ -383,6 +425,11 @@ public class RepairOption
         return optimiseStreams;
     }
 
+    public TimeRange timeRange()
+    {
+        return timeRange;
+    }
+
     @Override
     public String toString()
     {
@@ -399,6 +446,7 @@ public class RepairOption
                ", pull repair: " + pullRepair +
                ", force repair: " + forceRepair +
                ", optimise streams: "+ optimiseStreams +
+               ", time range: " + timeRange.toString() +
                ')';
     }
 
@@ -419,6 +467,8 @@ public class RepairOption
         options.put(FORCE_REPAIR_KEY, Boolean.toString(forceRepair));
         options.put(PREVIEW, previewKind.toString());
         options.put(OPTIMISE_STREAMS_KEY, Boolean.toString(optimiseStreams));
+        options.put(TIME_RANGE_START, Long.toString(timeRange.start));
+        options.put(TIME_RANGE_END, Long.toString(timeRange.end));
         return options;
     }
 }

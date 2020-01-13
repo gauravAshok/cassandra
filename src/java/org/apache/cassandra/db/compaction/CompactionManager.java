@@ -34,6 +34,7 @@ import com.google.common.collect.*;
 import com.google.common.util.concurrent.*;
 
 import org.apache.cassandra.locator.RangesAtEndpoint;
+import org.apache.cassandra.repair.TimeRange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -682,6 +683,7 @@ public class CompactionManager implements CompactionManagerMBean
      */
     public ListenableFuture<?> submitPendingAntiCompaction(ColumnFamilyStore cfs,
                                                            RangesAtEndpoint tokenRanges,
+                                                           TimeRange timeRange,
                                                            Refs<SSTableReader> sstables,
                                                            LifecycleTransaction txn,
                                                            UUID sessionId,
@@ -693,7 +695,7 @@ public class CompactionManager implements CompactionManagerMBean
             {
                 try (TableMetrics.TableTimer.Context ctx = cfs.metric.anticompactionTime.time())
                 {
-                    performAnticompaction(cfs, tokenRanges, sstables, txn, sessionId, isCancelled);
+                    performAnticompaction(cfs, tokenRanges, timeRange, sstables, txn, sessionId, isCancelled);
                 }
             }
         };
@@ -722,6 +724,7 @@ public class CompactionManager implements CompactionManagerMBean
                                                      Refs<SSTableReader> refs,
                                                      Iterator<SSTableReader> sstableIterator,
                                                      Collection<Range<Token>> ranges,
+                                                     TimeRange timeRange,
                                                      LifecycleTransaction txn,
                                                      UUID sessionID,
                                                      boolean isTransient) throws IOException
@@ -731,7 +734,7 @@ public class CompactionManager implements CompactionManagerMBean
 
         List<Range<Token>> normalizedRanges = Range.normalize(ranges);
 
-        Set<SSTableReader> fullyContainedSSTables = findSSTablesToAnticompact(sstableIterator, normalizedRanges, sessionID);
+        Set<SSTableReader> fullyContainedSSTables = findSSTablesToAnticompact(sstableIterator, normalizedRanges, timeRange, sessionID);
 
         cfs.metric.bytesMutatedAnticompaction.inc(SSTableReader.getTotalBytes(fullyContainedSSTables));
         cfs.getCompactionStrategyManager().mutateRepaired(fullyContainedSSTables, UNREPAIRED_SSTABLE, sessionID, isTransient);
@@ -756,6 +759,7 @@ public class CompactionManager implements CompactionManagerMBean
      */
     public void performAnticompaction(ColumnFamilyStore cfs,
                                       RangesAtEndpoint replicas,
+                                      TimeRange timeRange,
                                       Refs<SSTableReader> validatedForRepair,
                                       LifecycleTransaction txn,
                                       UUID sessionID,
@@ -773,13 +777,13 @@ public class CompactionManager implements CompactionManagerMBean
                 logger.trace("{} Starting anticompaction for ranges {}", PreviewKind.NONE.logPrefix(sessionID), replicas);
 
             Set<SSTableReader> sstables = new HashSet<>(validatedForRepair);
-            validateSSTableBoundsForAnticompaction(sessionID, sstables, replicas);
-            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), replicas.onlyFull().ranges(), txn, sessionID, false);
-            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), replicas.onlyTransient().ranges(), txn, sessionID, true);
+            validateSSTableBoundsForAnticompaction(sessionID, sstables, replicas, timeRange);
+            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), replicas.onlyFull().ranges(), timeRange, txn, sessionID, false);
+            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), replicas.onlyTransient().ranges(), timeRange, txn, sessionID, true);
 
             assert txn.originals().equals(sstables);
             if (!sstables.isEmpty())
-                doAntiCompaction(cfs, replicas, txn, sessionID, isCancelled);
+                doAntiCompaction(cfs, replicas, timeRange, txn, sessionID, isCancelled);
             txn.finish();
         }
         finally
@@ -791,16 +795,35 @@ public class CompactionManager implements CompactionManagerMBean
         logger.info("{} Completed anticompaction successfully", PreviewKind.NONE.logPrefix(sessionID));
     }
 
+    public void performAnticompaction(ColumnFamilyStore cfs,
+                                      RangesAtEndpoint replicas,
+                                      Refs<SSTableReader> validatedForRepair,
+                                      LifecycleTransaction txn,
+                                      UUID sessionID,
+                                      BooleanSupplier isCancelled) throws IOException
+    {
+        performAnticompaction(cfs, replicas, validatedForRepair, txn, sessionID, isCancelled);
+    }
+
     static void validateSSTableBoundsForAnticompaction(UUID sessionID,
                                                        Collection<SSTableReader> sstables,
                                                        RangesAtEndpoint ranges)
+    {
+        validateSSTableBoundsForAnticompaction(sessionID, sstables, ranges, TimeRange.DEFAULT);
+    }
+
+    static void validateSSTableBoundsForAnticompaction(UUID sessionID,
+                                                       Collection<SSTableReader> sstables,
+                                                       RangesAtEndpoint ranges,
+                                                       TimeRange timeRange)
     {
         List<Range<Token>> normalizedRanges = Range.normalize(ranges.ranges());
         for (SSTableReader sstable : sstables)
         {
             Bounds<Token> bounds = new Bounds<>(sstable.first.getToken(), sstable.last.getToken());
 
-            if (!Iterables.any(normalizedRanges, r -> (r.contains(bounds.left) && r.contains(bounds.right)) || r.intersects(bounds)))
+            if (!Iterables.any(normalizedRanges, r -> (r.contains(bounds.left) && r.contains(bounds.right)) || r.intersects(bounds)) ||
+                !timeRange.intersects(sstable.getSSTableMetadata().minKey, sstable.getSSTableMetadata().maxKey))
             {
                 // this should never happen - in PendingAntiCompaction#getSSTables we select all sstables that intersect the repaired ranges, that can't have changed here
                 String message = String.format("%s SSTable %s (%s) does not intersect repaired ranges %s, this sstable should not have been included.",
@@ -815,12 +838,23 @@ public class CompactionManager implements CompactionManagerMBean
     @VisibleForTesting
     static Set<SSTableReader> findSSTablesToAnticompact(Iterator<SSTableReader> sstableIterator, List<Range<Token>> normalizedRanges, UUID parentRepairSession)
     {
+        return findSSTablesToAnticompact(sstableIterator, normalizedRanges, parentRepairSession);
+    }
+
+    @VisibleForTesting
+    static Set<SSTableReader> findSSTablesToAnticompact(Iterator<SSTableReader> sstableIterator, List<Range<Token>> normalizedRanges, TimeRange timeRange, UUID parentRepairSession)
+    {
         Set<SSTableReader> fullyContainedSSTables = new HashSet<>();
         while (sstableIterator.hasNext())
         {
             SSTableReader sstable = sstableIterator.next();
 
             Bounds<Token> sstableBounds = new Bounds<>(sstable.first.getToken(), sstable.last.getToken());
+
+            if (!timeRange.contains(sstable.getSSTableMetadata().minKey, sstable.getSSTableMetadata().maxKey))
+            {
+                continue;
+            }
 
             for (Range<Token> r : normalizedRanges)
             {
@@ -1464,6 +1498,7 @@ public class CompactionManager implements CompactionManagerMBean
      */
     private void doAntiCompaction(ColumnFamilyStore cfs,
                                   RangesAtEndpoint ranges,
+                                  TimeRange timeRange,
                                   LifecycleTransaction txn,
                                   UUID pendingRepair,
                                   BooleanSupplier isCancelled)
@@ -1488,7 +1523,7 @@ public class CompactionManager implements CompactionManagerMBean
         {
             try (LifecycleTransaction groupTxn = txn.split(sstableGroup))
             {
-                int antiCompacted = antiCompactGroup(cfs, ranges, groupTxn, pendingRepair, isCancelled);
+                int antiCompacted = antiCompactGroup(cfs, ranges, timeRange, groupTxn, pendingRepair, isCancelled);
                 antiCompactedSSTableCount += antiCompacted;
             }
         }
@@ -1500,11 +1535,19 @@ public class CompactionManager implements CompactionManagerMBean
     @VisibleForTesting
     int antiCompactGroup(ColumnFamilyStore cfs,
                          RangesAtEndpoint ranges,
+                         TimeRange timeRange,
                          LifecycleTransaction txn,
                          UUID pendingRepair,
                          BooleanSupplier isCancelled)
     {
         Preconditions.checkArgument(!ranges.isEmpty(), "need at least one full or transient range");
+
+        if (txn.originals().size() == 0)
+        {
+            logger.info("No valid anticompactions for this group, All sstables were compacted and are no longer available");
+            return 0;
+        }
+
         long groupMaxDataAge = -1;
 
         for (Iterator<SSTableReader> i = txn.originals().iterator(); i.hasNext();)
@@ -1512,12 +1555,6 @@ public class CompactionManager implements CompactionManagerMBean
             SSTableReader sstable = i.next();
             if (groupMaxDataAge < sstable.maxDataAge)
                 groupMaxDataAge = sstable.maxDataAge;
-        }
-
-        if (txn.originals().size() == 0)
-        {
-            logger.info("No valid anticompactions for this group, All sstables were compacted and are no longer available");
-            return 0;
         }
 
         logger.info("Anticompacting {}", txn);
@@ -1589,13 +1626,29 @@ public class CompactionManager implements CompactionManagerMBean
             {
                 try (UnfilteredRowIterator partition = ci.next())
                 {
-                    Token token = partition.partitionKey().getToken();
+                    DecoratedKey key = partition.partitionKey();
+
+                    boolean inTheTimeRange = false;
+                    if (cfs.metadata().params.timeOrderedKey)
+                    {
+                        TimeRange partitionKeyTimeRange = key.interpretTimeBucket().toTimeRange();
+                        if (timeRange.intersects(partitionKeyTimeRange))
+                        {
+                            inTheTimeRange = true;
+                        }
+                    }
+                    else
+                    {
+                        inTheTimeRange = true;
+                    }
+
+                    Token token = key.getToken();
                     // if this row is contained in the full or transient ranges, append it to the appropriate sstable
-                    if (fullChecker.test(token))
+                    if (fullChecker.test(token) && inTheTimeRange)
                     {
                         fullWriter.append(partition);
                     }
-                    else if (transChecker.test(token))
+                    else if (transChecker.test(token) && inTheTimeRange)
                     {
                         transWriter.append(partition);
                     }

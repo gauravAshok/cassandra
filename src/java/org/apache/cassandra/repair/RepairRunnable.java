@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -286,7 +285,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         }
         else if (options.isIncremental())
         {
-            incrementalRepair(parentSession, startTime, force, traceState, allNeighbors, commonRanges, cfnames);
+            incrementalRepair(parentSession, startTime, force, traceState, allNeighbors, commonRanges, options.timeRange(), cfnames);
         }
         else
         {
@@ -305,7 +304,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         ListeningExecutorService executor = createExecutor();
 
         // Setting the repairedAt time to UNREPAIRED_SSTABLE causes the repairedAt times to be preserved across streamed sstables
-        final ListenableFuture<List<RepairSessionResult>> allSessions = submitRepairSessions(parentSession, false, executor, commonRanges, cfnames);
+        final ListenableFuture<List<RepairSessionResult>> allSessions = submitRepairSessions(parentSession, false, executor, commonRanges, TimeRange.DEFAULT, cfnames);
 
         // After all repair sessions completes(successful or not),
         // run anticompaction if necessary and send finish notice back to client
@@ -376,6 +375,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                    TraceState traceState,
                                    Set<InetAddressAndPort> allNeighbors,
                                    List<CommonRange> commonRanges,
+                                   TimeRange timeRange,
                                    String... cfnames)
     {
         // the local node also needs to be included in the set of participants, since coordinator sessions aren't persisted
@@ -389,7 +389,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         CoordinatorSession coordinatorSession = ActiveRepairService.instance.consistent.coordinated.registerSession(parentSession, allParticipants, forceRepair);
         ListeningExecutorService executor = createExecutor();
         AtomicBoolean hasFailure = new AtomicBoolean(false);
-        ListenableFuture repairResult = coordinatorSession.execute(() -> submitRepairSessions(parentSession, true, executor, allRanges, cfnames),
+        ListenableFuture repairResult = coordinatorSession.execute(() -> submitRepairSessions(parentSession, true, executor, allRanges, timeRange, cfnames),
                                                                    hasFailure);
         Collection<Range<Token>> ranges = new HashSet<>();
         for (Collection<Range<Token>> range : Iterables.transform(allRanges, cr -> cr.ranges))
@@ -409,7 +409,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         // Set up RepairJob executor for this repair command.
         ListeningExecutorService executor = createExecutor();
 
-        final ListenableFuture<List<RepairSessionResult>> allSessions = submitRepairSessions(parentSession, false, executor, commonRanges, cfnames);
+        final ListenableFuture<List<RepairSessionResult>> allSessions = submitRepairSessions(parentSession, false, executor, commonRanges, TimeRange.DEFAULT, cfnames);
 
         Futures.addCallback(allSessions, new FutureCallback<List<RepairSessionResult>>()
         {
@@ -478,6 +478,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                                                              boolean isIncremental,
                                                                              ListeningExecutorService executor,
                                                                              List<CommonRange> commonRanges,
+                                                                             TimeRange timeRange,
                                                                              String... cfnames)
     {
         List<ListenableFuture<RepairSessionResult>> futures = new ArrayList<>(options.getRanges().size());
@@ -490,6 +491,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             logger.info("Starting RepairSession for {}", commonRange);
             RepairSession session = ActiveRepairService.instance.submitRepairSession(parentSession,
                                                                                      commonRange,
+                                                                                     timeRange,
                                                                                      keyspace,
                                                                                      options.getParallelism(),
                                                                                      isIncremental,

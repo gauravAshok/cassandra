@@ -41,6 +41,7 @@ public interface KeyspaceRepairManager
     ListenableFuture prepareIncrementalRepair(UUID sessionID,
                                               Collection<ColumnFamilyStore> tables,
                                               RangesAtEndpoint tokenRanges,
+                                              TimeRange timeRange,
                                               ExecutorService executor,
                                               BooleanSupplier isCancelled);
 }

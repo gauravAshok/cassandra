@@ -66,7 +66,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
     public RepairJob(RepairSession session, String columnFamily)
     {
         this.session = session;
-        this.desc = new RepairJobDesc(session.parentRepairSession, session.getId(), session.keyspace, columnFamily, session.commonRange.ranges);
+        this.desc = new RepairJobDesc(session.parentRepairSession, session.getId(), session.keyspace, columnFamily, session.commonRange.ranges, session.timeRange);
         this.taskExecutor = session.taskExecutor;
         this.parallelismDegree = session.parallelismDegree;
     }

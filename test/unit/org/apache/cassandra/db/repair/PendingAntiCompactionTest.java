@@ -44,6 +44,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListenableFutureTask;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
+import org.apache.cassandra.repair.TimeRange;
 import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -372,7 +373,7 @@ public class PendingAntiCompactionTest extends AbstractPendingAntiCompactionTest
                                                                  true,0,
                                                                  true,
                                                                  PreviewKind.NONE);
-        CompactionManager.instance.performAnticompaction(result.cfs, atEndpoint(FULL_RANGE, NO_RANGES), result.refs, result.txn, sessionID, () -> false);
+        CompactionManager.instance.performAnticompaction(result.cfs, atEndpoint(FULL_RANGE, NO_RANGES), TimeRange.DEFAULT, result.refs, result.txn, sessionID, () -> false);
 
     }
 
@@ -398,7 +399,7 @@ public class PendingAntiCompactionTest extends AbstractPendingAntiCompactionTest
         Token left = cfs.getPartitioner().midpoint(sstable.first.getToken(), sstable.last.getToken());
         Token right = sstable.last.getToken();
         CompactionManager.instance.performAnticompaction(result.cfs,
-                                                         atEndpoint(Collections.singleton(new Range<>(left, right)), NO_RANGES),
+                                                         atEndpoint(Collections.singleton(new Range<>(left, right)), NO_RANGES), TimeRange.DEFAULT,
                                                          result.refs, result.txn, sessionID, () -> true);
     }
 
@@ -414,7 +415,7 @@ public class PendingAntiCompactionTest extends AbstractPendingAntiCompactionTest
         ListeningExecutorService es = MoreExecutors.listeningDecorator(MoreExecutors.newDirectExecutorService());
         PendingAntiCompaction pac = new PendingAntiCompaction(prsid, Collections.singleton(cfs), atEndpoint(FULL_RANGE, NO_RANGES), es, () -> false) {
             @Override
-            protected AcquisitionCallback getAcquisitionCallback(UUID prsId, RangesAtEndpoint tokenRanges)
+            protected AcquisitionCallback getAcquisitionCallback(UUID prsId, RangesAtEndpoint tokenRanges, TimeRange timeRange)
             {
                 return new AcquisitionCallback(prsid, tokenRanges, () -> false)
                 {
@@ -464,7 +465,7 @@ public class PendingAntiCompactionTest extends AbstractPendingAntiCompactionTest
                 // now we try to start a new AC, which will try to cancel all ongoing compactions
 
                 CompactionManager.instance.active.beginCompaction(ci);
-                PendingAntiCompaction pac = new PendingAntiCompaction(prsid, Collections.singleton(cfs), atEndpoint(FULL_RANGE, NO_RANGES), 0, 0, es, () -> false);
+                PendingAntiCompaction pac = new PendingAntiCompaction(prsid, Collections.singleton(cfs), atEndpoint(FULL_RANGE, NO_RANGES), TimeRange.DEFAULT, 0, 0, es, () -> false);
                 ListenableFuture fut = pac.run();
                 try
                 {

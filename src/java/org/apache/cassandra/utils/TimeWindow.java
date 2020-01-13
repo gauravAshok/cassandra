@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.utils;
 
+import org.apache.cassandra.repair.TimeRange;
+
 import java.util.List;
 import java.util.Objects;
 
@@ -46,15 +48,18 @@ public class TimeWindow
         return ts + duration;
     }
 
-    public boolean intersects(TimeWindow tw) {
+    public boolean intersects(TimeWindow tw)
+    {
         return tw.ts < getEndTs() && tw.getEndTs() > this.ts;
     }
 
-    public static TimeWindow merge(List<TimeWindow> windows) {
+    public static TimeWindow merge(List<TimeWindow> windows)
+    {
         long begin = Long.MAX_VALUE;
         long end = Long.MIN_VALUE;
 
-        for(TimeWindow tw : windows) {
+        for (TimeWindow tw : windows)
+        {
             begin = Long.min(begin, tw.ts);
             end = Long.max(end, tw.getEndTs());
         }
@@ -62,11 +67,18 @@ public class TimeWindow
         return new TimeWindow(begin, end - begin);
     }
 
-    public static TimeWindow merge(TimeWindow tw1, TimeWindow tw2) {
+    public static TimeWindow merge(TimeWindow tw1, TimeWindow tw2)
+    {
         long begin = Long.min(tw1.ts, tw2.ts);
         long end = Long.max(tw1.getEndTs(), tw2.getEndTs());
 
         return new TimeWindow(begin, end - begin);
+    }
+
+    // TODO: do away with 2 different classes
+    public TimeRange toTimeRange()
+    {
+        return new TimeRange(ts, getEndTs());
     }
 
     @Override
@@ -76,7 +88,7 @@ public class TimeWindow
         if (o == null || getClass() != o.getClass()) return false;
         TimeWindow that = (TimeWindow) o;
         return ts == that.ts &&
-                duration == that.duration;
+               duration == that.duration;
     }
 
     @Override
@@ -88,6 +100,6 @@ public class TimeWindow
     @Override
     public String toString()
     {
-         return "TimeWindow{" + ts + '-' + getEndTs() + '}';
+        return "TimeWindow{" + ts + '-' + getEndTs() + '}';
     }
 }

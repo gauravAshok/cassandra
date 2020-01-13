@@ -68,6 +68,12 @@ public class Repair extends NodeToolCmd
     @Option(title = "end_token", name = {"-et", "--end-token"}, description = "Use -et to specify a token at which repair range ends")
     private String endToken = EMPTY;
 
+    @Option(title = "start_time", name = {"-stime", "--start-time"}, description = "Use -stime to specify a time in ISO format from which the data's key range starts")
+    private String startTime = EMPTY;
+
+    @Option(title = "end_time", name = {"-etime", "--end-time"}, description = "Use -etime to specify a token at which data's key range ends")
+    private String endTime = EMPTY;
+
     @Option(title = "primary_range", name = {"-pr", "--partitioner-range"}, description = "Use -pr to repair only the first range returned by the partitioner")
     private boolean primaryRange = false;
 
@@ -127,6 +133,9 @@ public class Repair extends NodeToolCmd
         if (primaryRange && (!specificDataCenters.isEmpty() || !specificHosts.isEmpty()))
             throw new RuntimeException("Primary range repair should be performed on all nodes in the cluster.");
 
+        if (fullRepair && !(startTime.isEmpty() && endTime.isEmpty()))
+            throw new RuntimeException("Time range repair should be performed only with incremental repair.");
+
         for (String keyspace : keyspaces)
         {
             // avoid repairing system_distributed by default (CASSANDRA-9621)
@@ -152,6 +161,14 @@ public class Repair extends NodeToolCmd
             if (!startToken.isEmpty() || !endToken.isEmpty())
             {
                 options.put(RepairOption.RANGES_KEY, startToken + ":" + endToken);
+            }
+            if(!startTime.isEmpty())
+            {
+                options.put(RepairOption.TIME_RANGE_START, startTime);
+            }
+            if(!endTime.isEmpty())
+            {
+                options.put(RepairOption.TIME_RANGE_END, endTime);
             }
             if (localDC)
             {

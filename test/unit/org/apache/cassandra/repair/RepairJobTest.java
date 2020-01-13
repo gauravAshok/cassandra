@@ -105,7 +105,7 @@ public class RepairJobTest
                                         RepairParallelism parallelismDegree, boolean isIncremental, boolean pullRepair,
                                         boolean force, PreviewKind previewKind, boolean optimiseStreams, String... cfnames)
         {
-            super(parentRepairSession, id, commonRange, keyspace, parallelismDegree, isIncremental, pullRepair, force, previewKind, optimiseStreams, cfnames);
+            super(parentRepairSession, id, commonRange, TimeRange.DEFAULT, keyspace, parallelismDegree, isIncremental, pullRepair, force, previewKind, optimiseStreams, cfnames);
         }
 
         protected DebuggableThreadPoolExecutor createExecutor()

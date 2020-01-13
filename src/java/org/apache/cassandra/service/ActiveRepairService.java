@@ -35,6 +35,7 @@ import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import org.apache.cassandra.locator.EndpointsByRange;
 import org.apache.cassandra.locator.EndpointsForRange;
+import org.apache.cassandra.repair.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,11 +62,7 @@ import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.RequestCallback;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.repair.CommonRange;
 import org.apache.cassandra.streaming.PreviewKind;
-import org.apache.cassandra.repair.RepairJobDesc;
-import org.apache.cassandra.repair.RepairParallelism;
-import org.apache.cassandra.repair.RepairSession;
 import org.apache.cassandra.repair.consistent.CoordinatorSessions;
 import org.apache.cassandra.repair.consistent.LocalSessions;
 import org.apache.cassandra.repair.messages.*;
@@ -206,6 +203,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
      */
     public RepairSession submitRepairSession(UUID parentRepairSession,
                                              CommonRange range,
+                                             TimeRange timeRange,
                                              String keyspace,
                                              RepairParallelism parallelismDegree,
                                              boolean isIncremental,
@@ -222,7 +220,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         if (cfnames.length == 0)
             return null;
 
-        final RepairSession session = new RepairSession(parentRepairSession, UUIDGen.getTimeUUID(), range, keyspace,
+        final RepairSession session = new RepairSession(parentRepairSession, UUIDGen.getTimeUUID(), range, timeRange, keyspace,
                                                         parallelismDegree, isIncremental, pullRepair, force,
                                                         previewKind, optimiseStreams, cfnames);
 
@@ -399,7 +397,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
     public UUID prepareForRepair(UUID parentRepairSession, InetAddressAndPort coordinator, Set<InetAddressAndPort> endpoints, RepairOption options, boolean isForcedRepair, List<ColumnFamilyStore> columnFamilyStores)
     {
         long repairedAt = getRepairedAt(options, isForcedRepair);
-        registerParentRepairSession(parentRepairSession, coordinator, columnFamilyStores, options.getRanges(), options.isIncremental(), repairedAt, options.isGlobal(), options.getPreviewKind());
+        registerParentRepairSession(parentRepairSession, coordinator, columnFamilyStores, options.getRanges(), options.timeRange(), options.isIncremental(), repairedAt, options.isGlobal(), options.getPreviewKind());
         final CountDownLatch prepareLatch = new CountDownLatch(endpoints.size());
         final AtomicBoolean status = new AtomicBoolean(true);
         final Set<String> failedNodes = Collections.synchronizedSet(new HashSet<String>());
@@ -434,7 +432,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         {
             if (FailureDetector.instance.isAlive(neighbour))
             {
-                PrepareMessage message = new PrepareMessage(parentRepairSession, tableIds, options.getRanges(), options.isIncremental(), repairedAt, options.isGlobal(), options.getPreviewKind());
+                PrepareMessage message = new PrepareMessage(parentRepairSession, tableIds, options.getRanges(), options.timeRange(), options.isIncremental(), repairedAt, options.isGlobal(), options.getPreviewKind());
                 Message<RepairMessage> msg = Message.out(PREPARE_MSG, message);
                 MessagingService.instance().sendWithCallback(msg, neighbour, callback);
             }
@@ -481,6 +479,11 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
 
     public synchronized void registerParentRepairSession(UUID parentRepairSession, InetAddressAndPort coordinator, List<ColumnFamilyStore> columnFamilyStores, Collection<Range<Token>> ranges, boolean isIncremental, long repairedAt, boolean isGlobal, PreviewKind previewKind)
     {
+        registerParentRepairSession(parentRepairSession, coordinator, columnFamilyStores, ranges, TimeRange.DEFAULT, isIncremental, repairedAt, isGlobal, previewKind);
+    }
+
+    public synchronized void registerParentRepairSession(UUID parentRepairSession, InetAddressAndPort coordinator, List<ColumnFamilyStore> columnFamilyStores, Collection<Range<Token>> ranges, TimeRange timeRange, boolean isIncremental, long repairedAt, boolean isGlobal, PreviewKind previewKind)
+    {
         assert isIncremental || repairedAt == ActiveRepairService.UNREPAIRED_SSTABLE;
         if (!registeredForEndpointChanges)
         {
@@ -491,7 +494,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
 
         if (!parentRepairSessions.containsKey(parentRepairSession))
         {
-            parentRepairSessions.put(parentRepairSession, new ParentRepairSession(coordinator, columnFamilyStores, ranges, isIncremental, repairedAt, isGlobal, previewKind));
+            parentRepairSessions.put(parentRepairSession, new ParentRepairSession(coordinator, columnFamilyStores, ranges, timeRange, isIncremental, repairedAt, isGlobal, previewKind));
         }
     }
 
@@ -557,13 +560,14 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         private final Keyspace keyspace;
         private final Map<TableId, ColumnFamilyStore> columnFamilyStores = new HashMap<>();
         private final Collection<Range<Token>> ranges;
+        private final TimeRange timeRange;
         public final boolean isIncremental;
         public final boolean isGlobal;
         public final long repairedAt;
         public final InetAddressAndPort coordinator;
         public final PreviewKind previewKind;
 
-        public ParentRepairSession(InetAddressAndPort coordinator, List<ColumnFamilyStore> columnFamilyStores, Collection<Range<Token>> ranges, boolean isIncremental, long repairedAt, boolean isGlobal, PreviewKind previewKind)
+        public ParentRepairSession(InetAddressAndPort coordinator, List<ColumnFamilyStore> columnFamilyStores, Collection<Range<Token>> ranges, TimeRange timeRange, boolean isIncremental, long repairedAt, boolean isGlobal, PreviewKind previewKind)
         {
             this.coordinator = coordinator;
             Set<Keyspace> keyspaces = new HashSet<>();
@@ -577,6 +581,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             this.keyspace = Iterables.getOnlyElement(keyspaces);
 
             this.ranges = ranges;
+            this.timeRange = timeRange;
             this.repairedAt = repairedAt;
             this.isIncremental = isIncremental;
             this.isGlobal = isGlobal;
@@ -606,6 +611,11 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         public Set<Range<Token>> getRanges()
         {
             return ImmutableSet.copyOf(ranges);
+        }
+
+        public TimeRange getTimeRange()
+        {
+            return timeRange;
         }
 
         @Override

@@ -95,6 +95,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
 
     /** Range to repair */
     public final CommonRange commonRange;
+    public final TimeRange timeRange;
     public final boolean isIncremental;
     public final PreviewKind previewKind;
 
@@ -125,6 +126,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     public RepairSession(UUID parentRepairSession,
                          UUID id,
                          CommonRange commonRange,
+                         TimeRange timeRange,
                          String keyspace,
                          RepairParallelism parallelismDegree,
                          boolean isIncremental,
@@ -168,6 +170,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         }
 
         this.commonRange = commonRange;
+        this.timeRange = timeRange;
         this.isIncremental = isIncremental;
         this.previewKind = previewKind;
         this.pullRepair = pullRepair;
