@@ -18,67 +18,95 @@
 
 package org.apache.cassandra.utils;
 
-import org.apache.cassandra.repair.TimeRange;
-
 import java.util.List;
 import java.util.Objects;
 
 /**
- * Time window representing a range [ts, ts + duration). Use it with ms only to avoid any bugs.
+ * Time window representing a range [start, end). Use it with ms only to avoid any bugs.
  */
 public class TimeWindow
 {
-    public final long ts;
-    public final long duration;
+    public static final TimeWindow ALL = TimeWindow.fromLimits(0, Long.MAX_VALUE);
 
-    public TimeWindow(long ts, long duration)
+    public final long start;
+    public final long end;
+
+    private TimeWindow(long start, long end)
     {
-        this.ts = ts;
-        this.duration = duration;
+        this.start = start;
+        this.end = end;
+    }
+
+    public static TimeWindow fromDuration(long start, long duration)
+    {
+        return new TimeWindow(start, start + duration);
+    }
+
+    public static TimeWindow fromLimits(long start, long end)
+    {
+        return new TimeWindow(start, end);
     }
 
     public long getWindowLength(long windowSize)
     {
-        return duration / windowSize;
+        return getDuration() / windowSize;
     }
 
     // end ts is the exclusive bound
-    public long getEndTs()
+    public long getEnd()
     {
-        return ts + duration;
+        return end;
+    }
+
+    public long getStart()
+    {
+        return start;
+    }
+
+    public long getDuration()
+    {
+        return end - start;
     }
 
     public boolean intersects(TimeWindow tw)
     {
-        return tw.ts < getEndTs() && tw.getEndTs() > this.ts;
+        if (ALL.equals(tw) || ALL.equals(this))
+        {
+            return true;
+        }
+        return tw.start < this.end && tw.end > this.start;
+    }
+
+    public boolean contains(TimeWindow tw)
+    {
+        if (ALL.equals(this))
+        {
+            return true;
+        }
+
+        return start >= this.start && end <= this.end;
     }
 
     public static TimeWindow merge(List<TimeWindow> windows)
     {
-        long begin = Long.MAX_VALUE;
+        long start = Long.MAX_VALUE;
         long end = Long.MIN_VALUE;
 
         for (TimeWindow tw : windows)
         {
-            begin = Long.min(begin, tw.ts);
-            end = Long.max(end, tw.getEndTs());
+            start = Long.min(start, tw.start);
+            end = Long.max(end, tw.end);
         }
 
-        return new TimeWindow(begin, end - begin);
+        return TimeWindow.fromLimits(start, end);
     }
 
     public static TimeWindow merge(TimeWindow tw1, TimeWindow tw2)
     {
-        long begin = Long.min(tw1.ts, tw2.ts);
-        long end = Long.max(tw1.getEndTs(), tw2.getEndTs());
+        long start = Long.min(tw1.start, tw2.start);
+        long end = Long.max(tw1.end, tw2.end);
 
-        return new TimeWindow(begin, end - begin);
-    }
-
-    // TODO: do away with 2 different classes
-    public TimeRange toTimeRange()
-    {
-        return new TimeRange(ts, getEndTs());
+        return TimeWindow.fromLimits(start, end);
     }
 
     @Override
@@ -87,19 +115,19 @@ public class TimeWindow
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         TimeWindow that = (TimeWindow) o;
-        return ts == that.ts &&
-               duration == that.duration;
+        return start == that.start &&
+               end == that.end;
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(ts, duration);
+        return Objects.hash(start, end);
     }
 
     @Override
     public String toString()
     {
-        return "TimeWindow{" + ts + '-' + getEndTs() + '}';
+        return "TimeWindow{" + start + '-' + end + '}';
     }
 }

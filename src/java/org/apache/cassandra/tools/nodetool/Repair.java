@@ -164,11 +164,11 @@ public class Repair extends NodeToolCmd
             }
             if(!startTime.isEmpty())
             {
-                options.put(RepairOption.TIME_RANGE_START, startTime);
+                options.put(RepairOption.TIME_WINDOW_START, startTime);
             }
             if(!endTime.isEmpty())
             {
-                options.put(RepairOption.TIME_RANGE_END, endTime);
+                options.put(RepairOption.TIME_WINDOW_END, endTime);
             }
             if (localDC)
             {

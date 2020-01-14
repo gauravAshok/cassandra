@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.*;
+import org.apache.cassandra.utils.TimeWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -95,7 +96,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
 
     /** Range to repair */
     public final CommonRange commonRange;
-    public final TimeRange timeRange;
+    public final TimeWindow timeWindow;
     public final boolean isIncremental;
     public final PreviewKind previewKind;
 
@@ -126,7 +127,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     public RepairSession(UUID parentRepairSession,
                          UUID id,
                          CommonRange commonRange,
-                         TimeRange timeRange,
+                         TimeWindow timeWindow,
                          String keyspace,
                          RepairParallelism parallelismDegree,
                          boolean isIncremental,
@@ -170,7 +171,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         }
 
         this.commonRange = commonRange;
-        this.timeRange = timeRange;
+        this.timeWindow = timeWindow;
         this.isIncremental = isIncremental;
         this.previewKind = previewKind;
         this.pullRepair = pullRepair;

@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 import com.google.common.collect.Sets;
+import org.apache.cassandra.utils.TimeWindow;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -64,7 +65,7 @@ public class RepairSessionTest
         Range<Token> repairRange = new Range<>(p.getToken(ByteBufferUtil.bytes(0)), p.getToken(ByteBufferUtil.bytes(100)));
         Set<InetAddressAndPort> endpoints = Sets.newHashSet(remote);
         RepairSession session = new RepairSession(parentSessionId, sessionId,
-                                                  new CommonRange(endpoints, Collections.emptySet(), Arrays.asList(repairRange)), TimeRange.DEFAULT,
+                                                  new CommonRange(endpoints, Collections.emptySet(), Arrays.asList(repairRange)), TimeWindow.ALL,
                                                   "Keyspace1", RepairParallelism.SEQUENTIAL,
                                                   false, false, false,
                                                   PreviewKind.NONE, false, "Standard1");

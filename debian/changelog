@@ -1,4 +1,4 @@
-cassandra (4.0~alpha2-vrd.3) UNRELEASED; urgency=medium
+cassandra (4.0~alpha2.vrd04) UNRELEASED; urgency=medium
 
   * New internal release. Introduced a new compaction strategy called TOKCS.
   * Modified how TOKCS estimates remaining tasks.

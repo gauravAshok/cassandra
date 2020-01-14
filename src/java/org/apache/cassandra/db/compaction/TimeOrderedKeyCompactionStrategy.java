@@ -249,19 +249,12 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         long lowerWindowBound = toWindowMs(tsStartInclusiveInMs, windowSizeInMs);
         long upperWindowBound = toWindowMs(tsEndExlusiveInMs, windowSizeInMs) + (tsEndExlusiveInMs % windowSizeInMs == 0 ? 0 : windowSizeInMs);
 
-        return new TimeWindow(lowerWindowBound, upperWindowBound - lowerWindowBound);
+        return TimeWindow.fromLimits(lowerWindowBound, upperWindowBound);
     }
 
     static long toWindowMs(long timeInMs, long windowSizeMs)
     {
         return (timeInMs / windowSizeMs) * windowSizeMs;
-    }
-
-    private static long collectOccupacyStat(Set<Long> windowSet, long windowSizeMs, TimeWindow tw)
-    {
-        long endTs = tw.getEndTs();
-        for (long ts = tw.ts; ts < endTs; ts += windowSizeMs) windowSet.add(ts);
-        return tw.getWindowLength(windowSizeMs);
     }
 
     @Override
@@ -344,7 +337,9 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         }
 
         if (currGroup.size() != 0)
+        {
             groupedSSTables.add(currGroup);
+        }
         return groupedSSTables;
     }
 
@@ -498,7 +493,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                 this.keyCount = sstable.estimatedKeys();
             }
             this.rowCount = sstable.getTotalRows();
-            this.timeWindowMs = new TimeWindow(meta.minKey, (int) (meta.maxKey - meta.minKey));
+            this.timeWindowMs = TimeWindow.fromLimits(meta.minKey, meta.maxKey);
         }
 
         @Override
@@ -719,7 +714,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
         private boolean canMergeNearExpiryTombstones(OverlappingSet expired)
         {
-            return expired.maxOverlap > 1 || expired.timeWindowMs.duration > 2 * getWindowSizeInMs();
+            return expired.maxOverlap > 1 || expired.timeWindowMs.getDuration() > 2 * getWindowSizeInMs();
         }
 
         private boolean canMergeLatestTombstones(OverlappingSet mergeableLatestTombstones)
@@ -851,7 +846,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                 // we would like to merge all those files that are overlapping or are in a single compaction window.
                 return overlappingDataSets.stream()
                                           // group them by compaction window
-                                          .collect(Collectors.groupingBy(s -> toWindowMs(s.timeWindowMs.ts, windowSzInMs)))
+                                          .collect(Collectors.groupingBy(s -> toWindowMs(s.timeWindowMs.start, windowSzInMs)))
                                           .values().stream()
                                           // flatten all the sstables present in all of the overlapping sets lying in this compaction window
                                           .map(v -> v.stream()
@@ -873,13 +868,13 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
 
         private boolean needsTombstoneMerging()
         {
-            return tombstones.timeWindowMs.duration > 2 * getWindowSizeInMs() || tombstones.sstables.size() > 1;
+            return tombstones.timeWindowMs.getDuration() > 2 * getWindowSizeInMs() || tombstones.sstables.size() > 1;
         }
 
         private boolean isCompactable()
         {
             boolean tooManyFiles = tombstones.sstables.size() + data.size() > getMaxFileCountForCompaction();
-            boolean tooMuchData = dataSSTableTimeWindowMs.duration > 2 * getWindowSizeInMs() && dataSizeOnDisk > options.compactionMaxSizeMB * FileUtils.ONE_MB;
+            boolean tooMuchData = dataSSTableTimeWindowMs.getDuration() > 2 * getWindowSizeInMs() && dataSizeOnDisk > options.compactionMaxSizeMB * FileUtils.ONE_MB;
             return !tooManyFiles && !tooMuchData;
         }
 
@@ -939,7 +934,7 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
                 end = Long.max(end, tb.left);
                 if (currOverlap == -1)
                 {
-                    currentSet.timeWindowMs = new TimeWindow(start, (int) (end - start));
+                    currentSet.timeWindowMs = TimeWindow.fromLimits(start, end);
                     currentSet.maxOverlap = maxOverlap;
                     sets.add(currentSet);
 
@@ -958,8 +953,8 @@ public class TimeOrderedKeyCompactionStrategy extends AbstractCompactionStrategy
         sstables
                 .stream()
                 .map(s -> Stream.of(
-                        new TimeBoundary<>(s, s.timeWindowMs.ts, true),
-                        new TimeBoundary<>(s, s.timeWindowMs.getEndTs(), false)
+                        new TimeBoundary<>(s, s.timeWindowMs.start, true),
+                        new TimeBoundary<>(s, s.timeWindowMs.end, false)
                                    ))
                 .flatMap(Function.identity())
                 .sorted()

@@ -19,7 +19,6 @@ package org.apache.cassandra.io.sstable.metadata;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
@@ -27,7 +26,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Maps;
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
 import com.clearspring.analytics.stream.cardinality.ICardinality;
@@ -154,8 +152,8 @@ public class MetadataCollector implements PartitionStatisticsCollector
         if(trackKeyRange)
         {
             TimeWindow tw = DecoratedKey.interpretTimeBucket(key);
-            keyRangeTracker.update(tw.ts);
-            keyRangeTracker.update(tw.getEndTs());
+            keyRangeTracker.update(tw.start);
+            keyRangeTracker.update(tw.end);
         }
         return this;
     }

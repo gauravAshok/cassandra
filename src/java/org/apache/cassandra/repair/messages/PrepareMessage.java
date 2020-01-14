@@ -34,9 +34,9 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.repair.TimeRange;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.streaming.PreviewKind;
+import org.apache.cassandra.utils.TimeWindow;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 
@@ -44,7 +44,7 @@ public class PrepareMessage extends RepairMessage
 {
     public final List<TableId> tableIds;
     public final Collection<Range<Token>> ranges;
-    public final TimeRange timeRange;
+    public final TimeWindow timeWindow;
 
     public final UUID parentRepairSession;
     public final boolean isIncremental;
@@ -54,16 +54,16 @@ public class PrepareMessage extends RepairMessage
 
     public PrepareMessage(UUID parentRepairSession, List<TableId> tableIds, Collection<Range<Token>> ranges, boolean isIncremental, long timestamp, boolean isGlobal, PreviewKind previewKind)
     {
-        this(parentRepairSession, tableIds, ranges, TimeRange.DEFAULT, isIncremental, timestamp, isGlobal, previewKind);
+        this(parentRepairSession, tableIds, ranges, TimeWindow.ALL, isIncremental, timestamp, isGlobal, previewKind);
     }
 
-    public PrepareMessage(UUID parentRepairSession, List<TableId> tableIds, Collection<Range<Token>> ranges, TimeRange timeRange, boolean isIncremental, long timestamp, boolean isGlobal, PreviewKind previewKind)
+    public PrepareMessage(UUID parentRepairSession, List<TableId> tableIds, Collection<Range<Token>> ranges, TimeWindow timeWindow, boolean isIncremental, long timestamp, boolean isGlobal, PreviewKind previewKind)
     {
         super(null);
         this.parentRepairSession = parentRepairSession;
         this.tableIds = tableIds;
         this.ranges = ranges;
-        this.timeRange = timeRange;
+        this.timeWindow = timeWindow;
         this.isIncremental = isIncremental;
         this.timestamp = timestamp;
         this.isGlobal = isGlobal;
@@ -114,8 +114,8 @@ public class PrepareMessage extends RepairMessage
             out.writeLong(message.timestamp);
             out.writeBoolean(message.isGlobal);
             out.writeInt(message.previewKind.getSerializationVal());
-            out.writeLong(message.timeRange.start);
-            out.writeLong(message.timeRange.end);
+            out.writeLong(message.timeWindow.start);
+            out.writeLong(message.timeWindow.end);
         }
 
         public PrepareMessage deserialize(DataInputPlus in, int version) throws IOException
@@ -137,7 +137,7 @@ public class PrepareMessage extends RepairMessage
             PreviewKind previewKind = PreviewKind.deserialize(in.readInt());
             long startTime = in.readLong();
             long endTime = in.readLong();
-            return new PrepareMessage(parentRepairSession, tableIds, ranges, new TimeRange(startTime, endTime), isIncremental, timestamp, isGlobal, previewKind);
+            return new PrepareMessage(parentRepairSession, tableIds, ranges, TimeWindow.fromLimits(startTime, endTime), isIncremental, timestamp, isGlobal, previewKind);
         }
 
         public long serializedSize(PrepareMessage message, int version)
@@ -156,8 +156,8 @@ public class PrepareMessage extends RepairMessage
             size += TypeSizes.sizeof(message.timestamp);
             size += TypeSizes.sizeof(message.isGlobal);
             size += TypeSizes.sizeof(message.previewKind.getSerializationVal());
-            size += TypeSizes.sizeof(message.timeRange.start);
-            size += TypeSizes.sizeof(message.timeRange.end);
+            size += TypeSizes.sizeof(message.timeWindow.start);
+            size += TypeSizes.sizeof(message.timeWindow.end);
             return size;
         }
     };
@@ -172,7 +172,7 @@ public class PrepareMessage extends RepairMessage
                ", isIncremental=" + isIncremental +
                ", timestamp=" + timestamp +
                ", isGlobal=" + isGlobal +
-               ", timeRange=" + timeRange.toString() +
+               ", timeWindow=" + timeWindow.toString() +
                '}';
     }
 }

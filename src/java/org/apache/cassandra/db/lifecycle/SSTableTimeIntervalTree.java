@@ -72,7 +72,7 @@ public class SSTableTimeIntervalTree extends IntervalTree<Long, SSTableReader, I
 
     public List<SSTableReader> searchByDecoratedKey(DecoratedKey dk)
     {
-        long key = dk.interpretTimeBucket().ts;
+        long key = dk.interpretTimeBucket().start;
         return search(key);
     }
 }

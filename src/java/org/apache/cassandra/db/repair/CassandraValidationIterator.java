@@ -33,7 +33,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Maps;
 
-import org.apache.cassandra.repair.TimeRange;
+import org.apache.cassandra.utils.TimeWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -157,13 +157,14 @@ public class CassandraValidationIterator extends ValidationPartitionIterator
             predicate = (s) -> !prs.isIncremental || !s.isRepaired();
         }
 
-        TimeRange timeRange = prs.getTimeRange();
+        TimeWindow timeRange = prs.getTimeWindow();
+        boolean timeOrderedKey = cfs.metadata().params.timeOrderedKey;
         try (ColumnFamilyStore.RefViewFragment sstableCandidates = cfs.selectAndReference(View.select(SSTableSet.CANONICAL, predicate)))
         {
             for (SSTableReader sstable : sstableCandidates.sstables)
             {
                 if (new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(ranges) &&
-                    timeRange.intersects(sstable.getSSTableMetadata().minKey, sstable.getSSTableMetadata().maxKey))
+                    (!timeOrderedKey || timeRange.intersects(TimeWindow.fromLimits(sstable.getSSTableMetadata().minKey, sstable.getSSTableMetadata().maxKey))))
                 {
                     sstablesToValidate.add(sstable);
                 }

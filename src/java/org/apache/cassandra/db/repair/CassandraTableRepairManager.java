@@ -33,8 +33,8 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.repair.TableRepairManager;
-import org.apache.cassandra.repair.TimeRange;
 import org.apache.cassandra.repair.ValidationPartitionIterator;
+import org.apache.cassandra.utils.TimeWindow;
 
 public class CassandraTableRepairManager implements TableRepairManager
 {
@@ -64,8 +64,9 @@ public class CassandraTableRepairManager implements TableRepairManager
     }
 
     @Override
-    public synchronized void snapshot(String name, Collection<Range<Token>> ranges, TimeRange timeRange, boolean force)
+    public synchronized void snapshot(String name, Collection<Range<Token>> ranges, TimeWindow timeWindow, boolean force)
     {
+        boolean timeOrderedKey = cfs.metadata().params.timeOrderedKey;
         if (force || !cfs.snapshotExists(name))
         {
             cfs.snapshot(name, new Predicate<SSTableReader>()
@@ -74,7 +75,7 @@ public class CassandraTableRepairManager implements TableRepairManager
                 {
                     return sstable != null &&
                            !sstable.metadata().isIndex() && // exclude SSTables from 2i
-                           timeRange.intersects(sstable.getSSTableMetadata().minKey, sstable.getSSTableMetadata().maxKey) &&
+                           (!timeOrderedKey || timeWindow.intersects(TimeWindow.fromLimits(sstable.getSSTableMetadata().minKey, sstable.getSSTableMetadata().maxKey))) &&
                            new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(ranges);
                 }
             }, true, false); //ephemeral snapshot, if repair fails, it will be cleaned next startup

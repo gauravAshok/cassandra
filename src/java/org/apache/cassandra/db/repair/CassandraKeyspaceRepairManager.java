@@ -29,7 +29,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.repair.KeyspaceRepairManager;
-import org.apache.cassandra.repair.TimeRange;
+import org.apache.cassandra.utils.TimeWindow;
 
 public class CassandraKeyspaceRepairManager implements KeyspaceRepairManager
 {
@@ -44,11 +44,11 @@ public class CassandraKeyspaceRepairManager implements KeyspaceRepairManager
     public ListenableFuture prepareIncrementalRepair(UUID sessionID,
                                                      Collection<ColumnFamilyStore> tables,
                                                      RangesAtEndpoint tokenRanges,
-                                                     TimeRange timeRange,
+                                                     TimeWindow timeWindow,
                                                      ExecutorService executor,
                                                      BooleanSupplier isCancelled)
     {
-        PendingAntiCompaction pac = new PendingAntiCompaction(sessionID, tables, tokenRanges, timeRange, executor, isCancelled);
+        PendingAntiCompaction pac = new PendingAntiCompaction(sessionID, tables, tokenRanges, timeWindow, executor, isCancelled);
         return pac.run();
     }
 }

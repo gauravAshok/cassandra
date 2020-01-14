@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.Uninterruptibles;
-import org.apache.cassandra.repair.TimeRange;
+import org.apache.cassandra.utils.TimeWindow;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -127,7 +127,7 @@ public class AntiCompactionBytemanTest extends CQLTester
 
         try (LifecycleTransaction txn = getCurrentColumnFamilyStore().getTracker().tryModify(getCurrentColumnFamilyStore().getLiveSSTables(), OperationType.ANTICOMPACTION))
         {
-            CompactionManager.instance.antiCompactGroup(getCurrentColumnFamilyStore(), ranges, TimeRange.DEFAULT, txn, UUID.randomUUID(), () -> false);
+            CompactionManager.instance.antiCompactGroup(getCurrentColumnFamilyStore(), ranges, TimeWindow.ALL, txn, UUID.randomUUID(), () -> false);
         }
         finished.set(true);
         t.join();

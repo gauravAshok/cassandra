@@ -155,6 +155,6 @@ public abstract class DecoratedKey implements PartitionPosition, FilterKey
         // 11       : 4
         // 13       : duration
         // TODO: it is tightly coupled with the types. We need the first 2 columns of type long and int respectively.
-        return new TimeWindow(buffer.getLong(buffer.position() + 2), buffer.getInt(buffer.position() + 13));
+        return TimeWindow.fromDuration(buffer.getLong(buffer.position() + 2), buffer.getInt(buffer.position() + 13));
     }
 }

@@ -63,7 +63,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
                    .map(s -> TimeOrderedKeyCompactionStrategy.getTimeWindowMs(s, compactionWindowSizeInMs))
                    .collect(Collectors.toList()));
         this.compactionWindowSizeInMs = compactionWindowSizeInMs;
-        this.windowStartInMs = tw.ts;
+        this.windowStartInMs = tw.start;
         int windowCount = (int) tw.getWindowLength(compactionWindowSizeInMs);
         this.splitWindowCount = windowCount % splitFactor == 0 ? windowCount / splitFactor : 1 + windowCount / splitFactor;
         this.ssTableWriters = new SSTableWriter[splitFactor];
@@ -91,7 +91,7 @@ public class TimeBasedSplittingCompactionWriter extends CompactionAwareWriter
     @VisibleForTesting
     int getWindowIndex(DecoratedKey pk)
     {
-        long ts = pk.interpretTimeBucket().ts;
+        long ts = pk.interpretTimeBucket().start;
         long delta = ts - windowStartInMs;
         int window = (int) (delta / compactionWindowSizeInMs);
         return window / splitWindowCount;
