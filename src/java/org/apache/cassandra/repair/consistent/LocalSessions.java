@@ -564,17 +564,6 @@ public class LocalSessions
                                     UUID sessionID,
                                     Collection<ColumnFamilyStore> tables,
                                     RangesAtEndpoint tokenRanges,
-                                    ExecutorService executor,
-                                    BooleanSupplier isCancelled)
-    {
-        return prepareSession(repairManager, sessionID, tables, tokenRanges, TimeWindow.ALL, executor, isCancelled);
-    }
-
-    @VisibleForTesting
-    ListenableFuture prepareSession(KeyspaceRepairManager repairManager,
-                                    UUID sessionID,
-                                    Collection<ColumnFamilyStore> tables,
-                                    RangesAtEndpoint tokenRanges,
                                     TimeWindow timeWindow,
                                     ExecutorService executor,
                                     BooleanSupplier isCancelled)

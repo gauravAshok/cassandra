@@ -151,7 +151,7 @@ public class CompactionsCQLTest extends CQLTester
     @Test
     public void testTriggerMinorCompactionTOKCSCompactTombstoneWithData() throws Throwable
     {
-        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("1,0.001", 3, 3));
+        createTable("CREATE TABLE %s (id TIMESTAMP, duration_ms INT, id_ck TIMESTAMP, PRIMARY KEY((id, duration_ms), id_ck)) " + TOKCSUtil.getCQLFramgentForTOKCS("0,0", 3, 3));
         assertTrue(getCurrentColumnFamilyStore().getCompactionStrategyManager().isEnabled());
         execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(1), 1000, Util.dt(1));
         flush();
@@ -164,7 +164,7 @@ public class CompactionsCQLTest extends CQLTester
         execute("insert into %s (id, duration_ms, id_ck) values (?, ?, ?)", Util.dt(3), 1000, Util.dt(3));
         flush();
 
-        waitForMinor(KEYSPACE, currentTable(), SLEEP_TIME, true);
+        waitForMinor(KEYSPACE, currentTable(), 10_000, true);
 
         assertEquals(2, getCurrentColumnFamilyStore().getTracker().getView().liveSSTables().size());
     }

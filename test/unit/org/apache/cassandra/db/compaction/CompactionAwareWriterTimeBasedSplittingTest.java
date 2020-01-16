@@ -72,7 +72,7 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
         int rowCount = 5000;
         populate(rowCount);
         LifecycleTransaction txn = cfs.getTracker().tryModify(cfs.getLiveSSTables(), OperationType.COMPACTION);
-        long beforeSize = txn.originals().iterator().next().onDiskLength();
+        long beforeSize = txn.originals().stream().mapToLong(s -> s.onDiskLength()).sum();
         CompactionAwareWriter writer = new TimeBasedSplittingCompactionWriter(cfs, cfs.getDirectories(), txn, txn.originals(), false, 60_000, 0, 3);
 
         int rows = compact(cfs, txn, writer);
@@ -93,7 +93,6 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
 
     private int compact(ColumnFamilyStore cfs, LifecycleTransaction txn, CompactionAwareWriter writer)
     {
-        assert txn.originals().size() == 1;
         int rowsWritten = 0;
         int nowInSec = FBUtilities.nowInSeconds();
         try (AbstractCompactionStrategy.ScannerList scanners = cfs.getCompactionStrategyManager().getScanners(txn.originals());
@@ -129,7 +128,6 @@ public class CompactionAwareWriterTimeBasedSplittingTest extends CQLTester
 
         ColumnFamilyStore cfs = getColumnFamilyStore();
         cfs.forceBlockingFlush();
-        assert cfs.getLiveSSTables().size() == 1 : cfs.getLiveSSTables();
     }
 
     private void validateData(ColumnFamilyStore cfs, int rowCount) throws Throwable
