@@ -2347,11 +2347,6 @@ public class DatabaseDescriptor
         return conf.file_cache_round_up;
     }
 
-    public static boolean getBufferPoolUseHeapIfExhausted()
-    {
-        return conf.buffer_pool_use_heap_if_exhausted;
-    }
-
     public static DiskOptimizationStrategy getDiskOptimizationStrategy()
     {
         return diskOptimizationStrategy;
