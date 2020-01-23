@@ -49,18 +49,7 @@ public class TimeWindow
 
     public long getWindowLength(long windowSize)
     {
-        return getDuration() / windowSize;
-    }
-
-    // end ts is the exclusive bound
-    public long getEnd()
-    {
-        return end;
-    }
-
-    public long getStart()
-    {
-        return start;
+        return getDuration() / windowSize + (getDuration() % windowSize == 0 ? 0 : 1);
     }
 
     public long getDuration()
@@ -84,7 +73,7 @@ public class TimeWindow
             return true;
         }
 
-        return start >= this.start && end <= this.end;
+        return tw.start >= this.start && tw.end <= this.end;
     }
 
     public static TimeWindow merge(List<TimeWindow> windows)

@@ -72,12 +72,12 @@ public class RepairJobDesc
     @Override
     public String toString()
     {
-        return "[repair #" + sessionId + " on " + keyspace + "/" + columnFamily + ", " + ranges + "]";
+        return "[repair #" + sessionId + " on " + keyspace + "/" + columnFamily + ", " + ranges + ", time window: " + timeWindow + "]";
     }
 
     public String toString(PreviewKind previewKind)
     {
-        return '[' + previewKind.logPrefix() + " #" + sessionId + " on " + keyspace + "/" + columnFamily + ", " + ranges + "]";
+        return '[' + previewKind.logPrefix() + " #" + sessionId + " on " + keyspace + "/" + columnFamily + ", " + ranges + ", time window: " + timeWindow + "]";
     }
 
     @Override
