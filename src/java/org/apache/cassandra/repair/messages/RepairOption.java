@@ -281,14 +281,15 @@ public class RepairOption
         }
 
         try {
-            return OffsetDateTime.parse(value).toEpochSecond() * 1000;
+            OffsetDateTime dateTime = OffsetDateTime.parse(value);
+            return dateTime.toEpochSecond() * 1000 + (dateTime.getNano() / 1000000);
         }
         catch (Exception e)
         { }
 
         try
         {
-            return Long.parseLong(value) * 1000;
+            return Long.parseLong(value);
         }
         catch (Exception e)
         {

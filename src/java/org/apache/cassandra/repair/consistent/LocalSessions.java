@@ -622,7 +622,7 @@ public class LocalSessions
 
         LocalSession session = createSessionUnsafe(sessionID, parentSession, peers);
         putSessionUnsafe(session);
-        logger.info("Beginning local incremental repair session {}", session);
+        logger.info("Beginning local incremental repair for timeWindow: {}, session {}", parentSession.getTimeWindow(), session);
 
         ExecutorService executor = Executors.newFixedThreadPool(parentSession.getColumnFamilyStores().size());
 

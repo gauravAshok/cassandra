@@ -45,7 +45,7 @@ public class ValidationRequest extends RepairMessage
     {
         return "ValidationRequest{" +
                "nowInSec=" + nowInSec +
-               "} " + super.toString();
+               "} with " + super.toString();
     }
 
     @Override

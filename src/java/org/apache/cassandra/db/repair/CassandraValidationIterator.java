@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.LongPredicate;
+import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -176,6 +177,11 @@ public class CassandraValidationIterator extends ValidationPartitionIterator
                 logger.error("Could not reference sstables");
                 throw new RuntimeException("Could not reference sstables");
             }
+        }
+
+        if(logger.isDebugEnabled())
+        {
+            logger.debug("SStables for validation: {}", sstables.stream().map(s -> String.valueOf(s.descriptor.generation)).collect(Collectors.joining(",", "[", "]")));
         }
 
         return sstables;

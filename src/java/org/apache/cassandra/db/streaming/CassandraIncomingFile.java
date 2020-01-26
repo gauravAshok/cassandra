@@ -69,8 +69,8 @@ public class CassandraIncomingFile implements IncomingStream
             reader = new CassandraCompressedStreamReader(header, streamHeader, session);
         else
             reader = new CassandraStreamReader(header, streamHeader, session);
-
         size = streamHeader.size();
+        logger.debug("Incoming stream size: {}", size);
         sstable = reader.read(in);
     }
 

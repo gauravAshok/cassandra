@@ -66,6 +66,11 @@ public class StreamTransferTask extends StreamTask
         message = StreamHook.instance.reportOutgoingStream(session, stream, message);
         streams.put(message.header.sequenceNumber, message);
         totalSize += message.stream.getSize();
+
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("StreamPlan {}: adding transfer stream: {} of header size: {}", session.planId(), message.stream.getName(), message.stream.getSize());
+        }
     }
 
     /**

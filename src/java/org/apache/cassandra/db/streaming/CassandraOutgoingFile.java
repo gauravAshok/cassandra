@@ -43,6 +43,8 @@ import org.apache.cassandra.streaming.OutgoingStream;
 import org.apache.cassandra.streaming.StreamOperation;
 import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.utils.concurrent.Ref;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.cassandra.db.compaction.Verifier.RangeOwnHelper;
 
@@ -51,6 +53,7 @@ import static org.apache.cassandra.db.compaction.Verifier.RangeOwnHelper;
  */
 public class CassandraOutgoingFile implements OutgoingStream
 {
+    private static final Logger logger = LoggerFactory.getLogger(CassandraOutgoingFile.class);
     public static final List<Component> STREAM_COMPONENTS = ImmutableList.of(Component.DATA, Component.PRIMARY_INDEX, Component.STATS,
                                                                              Component.COMPRESSION_INFO, Component.FILTER, Component.SUMMARY,
                                                                              Component.DIGEST, Component.CRC);
@@ -173,16 +176,31 @@ public class CassandraOutgoingFile implements OutgoingStream
     public void write(StreamSession session, DataOutputStreamPlus out, int version) throws IOException
     {
         SSTableReader sstable = ref.get();
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("StreamPlan: {}, writing cassandra stream header of size: {}",
+                         session.planId(), CassandraStreamHeader.serializer.serializedSize(header, version));
+        }
         CassandraStreamHeader.serializer.serialize(header, out, version);
         out.flush();
 
         if (shouldStreamEntireSSTable() && out instanceof AsyncStreamingOutputPlus)
         {
+            if (logger.isDebugEnabled())
+            {
+                logger.debug("StreamPlan: {}, writing cassandra entire sstable of size: {}",
+                             session.planId(), header.size());
+            }
             CassandraEntireSSTableStreamWriter writer = new CassandraEntireSSTableStreamWriter(sstable, session, manifest);
             writer.write((AsyncStreamingOutputPlus) out);
         }
         else
         {
+            if (logger.isDebugEnabled())
+            {
+                logger.debug("StreamPlan: {}, writing cassandra stream of size: {}, with compression: {}",
+                             session.planId(), header.size(), header.compressionInfo != null);
+            }
             CassandraStreamWriter writer = (header.compressionInfo == null) ?
                      new CassandraStreamWriter(sstable, header.sections, session) :
                      new CassandraCompressedStreamWriter(sstable, header.sections,

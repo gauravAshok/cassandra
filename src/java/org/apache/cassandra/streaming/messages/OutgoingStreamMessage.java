@@ -27,9 +27,12 @@ import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.streaming.OutgoingStream;
 import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.utils.FBUtilities;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class OutgoingStreamMessage extends StreamMessage
 {
+    private static final Logger logger = LoggerFactory.getLogger(OutgoingStreamMessage.class);
     public static Serializer<OutgoingStreamMessage> serializer = new Serializer<OutgoingStreamMessage>()
     {
         public OutgoingStreamMessage deserialize(DataInputPlus in, int version, StreamSession session)
@@ -83,6 +86,12 @@ public class OutgoingStreamMessage extends StreamMessage
         if (completed)
         {
             return;
+        }
+
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("StreamPlan: {}, writing stream message header of size: {}",
+                         session.planId(), StreamMessageHeader.serializer.serializedSize(header, version));
         }
         StreamMessageHeader.serializer.serialize(header, out, version);
         stream.write(session, out, version);

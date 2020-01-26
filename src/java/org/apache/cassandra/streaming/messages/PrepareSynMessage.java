@@ -91,8 +91,8 @@ public class PrepareSynMessage extends StreamMessage
         int totalFile = 0;
         for (StreamSummary summary : summaries)
             totalFile += summary.files;
-        sb.append(" ").append(totalFile).append(" files");
-        sb.append('}');
+        sb.append(totalFile).append(" files");
+        sb.append(')');
         return sb.toString();
     }
 }
