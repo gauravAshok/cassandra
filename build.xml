@@ -25,7 +25,7 @@
     <property name="debuglevel" value="source,lines,vars"/>
 
     <!-- default version and SCM information -->
-    <property name="base.version" value="4.0-alpha2.vrd05"/>
+    <property name="base.version" value="4.0-alpha3.vrd05"/>
     <property name="scm.connection" value="scm:https://gitbox.apache.org/repos/asf/cassandra.git"/>
     <property name="scm.developerConnection" value="scm:https://gitbox.apache.org/repos/asf/cassandra.git"/>
     <property name="scm.url" value="https://gitbox.apache.org/repos/asf?p=cassandra.git;a=tree"/>
@@ -63,6 +63,9 @@
     <property name="test.microbench.src" value="${test.dir}/microbench"/>
     <property name="test.distributed.src" value="${test.dir}/distributed"/>
     <property name="test.compression_algo" value="LZ4"/>
+    <property name="test.distributed.listfile" value="ant-jvm-dtest-list"/>
+    <property name="test.distributed.upgrade.listfile" value="ant-jvm-dtest-upgrade-list"/>
+    <property name="test.distributed.upgrade.package" value="org.apache.cassandra.distributed.upgrade"/>
     <property name="dist.dir" value="${build.dir}/dist"/>
     <property name="tmp.dir" value="${java.io.tmpdir}"/>
 
@@ -245,7 +248,7 @@
     <sequential>
       <javadoc destdir="@{destdir}" author="true" version="true" use="true"
         windowtitle="${ant.project.name} API" classpathref="cassandra.classpath"
-        bottom="Copyright &amp;copy; 2009-2019 The Apache Software Foundation"
+        bottom="Copyright &amp;copy; 2009-2020 The Apache Software Foundation"
         useexternalfile="yes" encoding="UTF-8"
         maxmemory="256m">
         <filesets/>
@@ -573,7 +576,6 @@
           <dependency groupId="org.fusesource" artifactId="sigar" version="1.6.4">
             <exclusion groupId="log4j" artifactId="log4j"/>
           </dependency>
-          <dependency groupId="joda-time" artifactId="joda-time" version="2.4" />
           <dependency groupId="com.carrotsearch" artifactId="hppc" version="0.5.4" />
           <dependency groupId="de.jflex" artifactId="jflex" version="1.6.0" />
           <dependency groupId="com.github.rholder" artifactId="snowball-stemmer" version="1.3.0.581.1" />
@@ -583,6 +585,15 @@
           <dependency groupId="org.ow2.asm" artifactId="asm" version="${asm.version}" />
           <dependency groupId="org.ow2.asm" artifactId="asm-tree" version="${asm.version}" />
           <dependency groupId="org.ow2.asm" artifactId="asm-commons" version="${asm.version}" />
+          <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-cli" version="0.14"/>
+          <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-core" version="0.14"/>
+          <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-stacktrace" version="0.14"/>
+          <dependency groupId="org.gridkit.jvmtool" artifactId="mxdump" version="0.14"/>
+          <dependency groupId="org.gridkit.lab" artifactId="jvm-attach-api" version="1.5"/>
+          <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-json" version="0.14"/>
+
+          <dependency groupId="com.beust" artifactId="jcommander" version="1.30"/>
+
         </dependencyManagement>
         <developer id="adelapena" name="Andres de la Peña"/>
         <developer id="alakshman" name="Avinash Lakshman"/>
@@ -653,6 +664,13 @@
         <dependency groupId="org.openjdk.jmh" artifactId="jmh-generator-annprocess"/>
         <dependency groupId="net.ju-n.compile-command-annotations" artifactId="compile-command-annotations"/>
         <dependency groupId="org.apache.ant" artifactId="ant-junit" version="1.9.7" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-cli" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-core" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-stacktrace" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="mxdump" />
+        <dependency groupId="org.gridkit.lab" artifactId="jvm-attach-api" />
+        <dependency groupId="com.beust" artifactId="jcommander" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-json"/>
       </artifact:pom>
       <!-- this build-deps-pom-sources "artifact" is the same as build-deps-pom but only with those
            artifacts that have "-source.jar" files -->
@@ -690,7 +708,6 @@
         <parent groupId="org.apache.cassandra"
                 artifactId="cassandra-parent"
                 version="${version}"/>
-        <dependency groupId="joda-time" artifactId="joda-time"/>
       </artifact:pom>
 
       <!-- now the pom's for artifacts being deployed to Maven Central -->
@@ -756,7 +773,6 @@
         <dependency groupId="net.openhft" artifactId="chronicle-bytes" version="${chronicle-bytes.version}"/>
         <dependency groupId="net.openhft" artifactId="chronicle-wire" version="${chronicle-wire.version}"/>
         <dependency groupId="net.openhft" artifactId="chronicle-threads" version="${chronicle-threads.version}"/>
-        <dependency groupId="joda-time" artifactId="joda-time"/>
         <dependency groupId="org.fusesource" artifactId="sigar"/>
         <dependency groupId="org.eclipse.jdt.core.compiler" artifactId="ecj"/>
         <dependency groupId="org.caffinitas.ohc" artifactId="ohc-core"/>
@@ -764,7 +780,14 @@
         <dependency groupId="com.github.ben-manes.caffeine" artifactId="caffeine" />
         <dependency groupId="org.jctools" artifactId="jctools-core"/>
         <dependency groupId="org.ow2.asm" artifactId="asm" />
-        <dependency groupId="com.carrotsearch" artifactId="hppc" version="0.5.4" />
+        <dependency groupId="com.carrotsearch" artifactId="hppc" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-cli" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-core" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-stacktrace" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="mxdump" />
+        <dependency groupId="org.gridkit.lab" artifactId="jvm-attach-api" />
+        <dependency groupId="com.beust" artifactId="jcommander" />
+        <dependency groupId="org.gridkit.jvmtool" artifactId="sjk-json"/>
       </artifact:pom>
       <artifact:pom id="dist-pom"
                     artifactId="apache-cassandra"
@@ -1287,6 +1310,7 @@
      encoding="utf-8">
      <classpath>
         <path refid="cassandra.classpath"/>
+        <pathelement location="${fqltool.build.classes}"/>
      </classpath>
      <compilerarg value="-XDignore.symbol.file"/>
      <src path="${test.unit.src}"/>
@@ -1656,10 +1680,6 @@
     </sequential>
   </target>
 
-  <target name="test-all"
-          depends="eclipse-warnings,test,long-test,test-compression,stress-test,fqltool-test"
-          description="Run all tests except for those under test-burn" />
-
   <!-- Use JaCoCo ant extension without needing externally saved lib -->
   <target name="jacoco-init" depends="maven-ant-tasks-init">
     <artifact:dependencies pathId="jacocoant.classpath">
@@ -1892,7 +1912,7 @@
     <echo message="Mem size : ${mem.size}"/>
   </target>
 
-  <target name="test" depends="build-test,get-cores,get-mem" description="Parallel Test Runner">
+  <target name="test" depends="eclipse-warnings,build-test,get-cores,get-mem" description="Parallel Test Runner">
     <path id="all-test-classes-path">
       <fileset dir="${test.unit.src}" includes="**/${test.name}.java" excludes="**/distributed/test/UpgradeTest*.java" />
     </path>
@@ -1969,6 +1989,39 @@
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
       <jvmarg value="-Djava.io.tmpdir=${tmp.dir}"/>
       <jvmarg value="-Dcassandra.skip_sync=true" />
+    </testmacro>
+  </target>
+
+  <!-- In-JVM upgrade dtests -->
+  <target name="list-jvm-upgrade-dtests" depends="build-test">
+    <java classname="org.apache.cassandra.distributed.test.TestLocator" fork="no">
+          <classpath>
+              <path refid="cassandra.classpath" />
+              <pathelement location="${test.classes}"/>
+              <pathelement location="${test.conf}"/>
+              <fileset dir="${test.lib}">
+                  <include name="**/*.jar" />
+              </fileset>
+          </classpath>
+          <arg value="${test.distributed.upgrade.listfile}"/>
+          <arg value="${test.distributed.upgrade.package}"/>
+    </java>
+  </target>
+
+  <target name="test-jvm-upgrade-dtest-forking" depends="list-jvm-upgrade-dtests" description="Execute In-JVM 'distributed' upgrade tests" >
+    <chmod file="${test.distributed.upgrade.listfile}" perm="+x"/>
+    <exec executable="./${test.distributed.upgrade.listfile}" failonerror="true"/>
+    <delete file="${test.distributed.upgrade.listfile}"/>
+  </target>
+
+  <target name="test-jvm-upgrade-dtest" depends="build-test" description="Execute in-jvm dtests">
+    <testmacro inputdir="${test.distributed.src}" timeout="${test.distributed.timeout}" forkmode="once" showoutput="true" filter="**/upgrade/*Test.java">
+      <jvmarg value="-Dlogback.configurationFile=test/conf/logback-dtest.xml"/>
+      <jvmarg value="-Dcassandra.ring_delay_ms=10000"/>
+      <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
+      <jvmarg value="-Djava.io.tmpdir=${tmp.dir}"/>
+      <jvmarg value="-Dcassandra.skip_sync=true" />
+      <jvmarg value="-XX:MaxMetaspaceSize=512M"/>
     </testmacro>
   </target>
 
