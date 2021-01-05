@@ -127,18 +127,18 @@ public class LifecycleTransaction extends Transactional.AbstractTransactional im
     /**
      * construct a Transaction for use in an offline operation
      */
-    public static LifecycleTransaction offline(OperationType operationType, SSTableReader reader)
+    public static LifecycleTransaction offline(OperationType operationType, SSTableReader reader, boolean timeOrderedKey)
     {
-        return offline(operationType, singleton(reader));
+        return offline(operationType, singleton(reader), timeOrderedKey);
     }
 
     /**
      * construct a Transaction for use in an offline operation
      */
-    public static LifecycleTransaction offline(OperationType operationType, Iterable<SSTableReader> readers)
+    public static LifecycleTransaction offline(OperationType operationType, Iterable<SSTableReader> readers, boolean timeOrderedKey)
     {
         // if offline, for simplicity we just use a dummy tracker
-        Tracker dummy = new Tracker(null, false);
+        Tracker dummy = new Tracker(null, false, timeOrderedKey);
         dummy.addInitialSSTables(readers);
         dummy.apply(updateCompacting(emptySet(), readers));
         return new LifecycleTransaction(dummy, operationType, readers);
@@ -148,9 +148,9 @@ public class LifecycleTransaction extends Transactional.AbstractTransactional im
      * construct an empty Transaction with no existing readers
      */
     @SuppressWarnings("resource") // log closed during postCleanup
-    public static LifecycleTransaction offline(OperationType operationType)
+    public static LifecycleTransaction offline(OperationType operationType, boolean timeOrderedKey)
     {
-        Tracker dummy = new Tracker(null, false);
+        Tracker dummy = new Tracker(null, false, timeOrderedKey);
         return new LifecycleTransaction(dummy, new LogTransaction(operationType, dummy), Collections.emptyList());
     }
 

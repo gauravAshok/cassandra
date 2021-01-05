@@ -66,6 +66,9 @@ public class StatsMetadata extends MetadataComponent
     public final long totalRows;
     public final UUID pendingRepair;
     public final boolean isTransient;
+    public final long minKey, maxKey;
+    public final long partitionTombstones, rowTombstones, rangeTombstones;
+
     // just holds the current encoding stats to avoid allocating - it is not serialized
     public final EncodingStats encodingStats;
 
@@ -88,7 +91,9 @@ public class StatsMetadata extends MetadataComponent
                          long totalColumnsSet,
                          long totalRows,
                          UUID pendingRepair,
-                         boolean isTransient)
+                         boolean isTransient,
+                         long minKey, long maxKey,
+                         long partitionTombstones, long rowTombstones, long rangeTombstones)
     {
         this.estimatedPartitionSize = estimatedPartitionSize;
         this.estimatedCellPerPartitionCount = estimatedCellPerPartitionCount;
@@ -110,6 +115,11 @@ public class StatsMetadata extends MetadataComponent
         this.totalRows = totalRows;
         this.pendingRepair = pendingRepair;
         this.isTransient = isTransient;
+        this.minKey = minKey;
+        this.maxKey = maxKey;
+        this.partitionTombstones = partitionTombstones;
+        this.rowTombstones = rowTombstones;
+        this.rangeTombstones = rangeTombstones;
         this.encodingStats = new EncodingStats(minTimestamp, minLocalDeletionTime, minTTL);
     }
 
@@ -163,7 +173,8 @@ public class StatsMetadata extends MetadataComponent
                                  totalColumnsSet,
                                  totalRows,
                                  pendingRepair,
-                                 isTransient);
+                                 isTransient,
+                                 minKey, maxKey, partitionTombstones, rowTombstones, rangeTombstones);
     }
 
     public StatsMetadata mutateRepairedMetadata(long newRepairedAt, UUID newPendingRepair, boolean newIsTransient)
@@ -187,7 +198,8 @@ public class StatsMetadata extends MetadataComponent
                                  totalColumnsSet,
                                  totalRows,
                                  newPendingRepair,
-                                 newIsTransient);
+                                 newIsTransient,
+                                 minKey, maxKey, partitionTombstones, rowTombstones, rangeTombstones);
     }
 
     @Override
@@ -217,6 +229,11 @@ public class StatsMetadata extends MetadataComponent
                        .append(totalColumnsSet, that.totalColumnsSet)
                        .append(totalRows, that.totalRows)
                        .append(pendingRepair, that.pendingRepair)
+                       .append(minKey, that.minKey)
+                       .append(maxKey, that.maxKey)
+                       .append(partitionTombstones, that.partitionTombstones)
+                       .append(rowTombstones, that.rowTombstones)
+                       .append(rangeTombstones, that.rangeTombstones)
                        .build();
     }
 
@@ -243,6 +260,11 @@ public class StatsMetadata extends MetadataComponent
                        .append(totalColumnsSet)
                        .append(totalRows)
                        .append(pendingRepair)
+                       .append(minKey)
+                       .append(maxKey)
+                       .append(partitionTombstones)
+                       .append(rowTombstones)
+                       .append(rangeTombstones)
                        .build();
     }
 
@@ -282,6 +304,16 @@ public class StatsMetadata extends MetadataComponent
             if (version.hasIsTransient())
             {
                 size += TypeSizes.sizeof(component.isTransient);
+            }
+
+            if(version.hasFirstKeyRange())
+                size += (2 * TypeSizes.sizeof(component.minKey));
+
+            if(version.hasTombstoneCounts())
+            {
+                size += TypeSizes.sizeof(component.partitionTombstones);
+                size += TypeSizes.sizeof(component.rowTombstones);
+                size += TypeSizes.sizeof(component.rangeTombstones);
             }
 
             return size;
@@ -334,6 +366,19 @@ public class StatsMetadata extends MetadataComponent
             if (version.hasIsTransient())
             {
                 out.writeBoolean(component.isTransient);
+            }
+
+            if(version.hasFirstKeyRange())
+            {
+                out.writeLong(component.minKey);
+                out.writeLong(component.maxKey);
+            }
+
+            if(version.hasTombstoneCounts())
+            {
+                out.writeLong(component.partitionTombstones);
+                out.writeLong(component.rowTombstones);
+                out.writeLong(component.rangeTombstones);
             }
         }
 
@@ -395,6 +440,21 @@ public class StatsMetadata extends MetadataComponent
 
             boolean isTransient = version.hasIsTransient() && in.readBoolean();
 
+            long minKey = 0, maxKey = 0, partitionTombstones = 0, rowTombstones = 0, rangeTombstones = 0;
+
+            if(version.hasFirstKeyRange())
+            {
+                minKey = in.readLong();
+                maxKey = in.readLong();
+            }
+
+            if(version.hasTombstoneCounts())
+            {
+                partitionTombstones = in.readLong();
+                rowTombstones = in.readLong();
+                rangeTombstones = in.readLong();
+            }
+
             return new StatsMetadata(partitionSizes,
                                      columnCounts,
                                      commitLogIntervals,
@@ -414,7 +474,9 @@ public class StatsMetadata extends MetadataComponent
                                      totalColumnsSet,
                                      totalRows,
                                      pendingRepair,
-                                     isTransient);
+                                     isTransient,
+                                     minKey, maxKey,
+                                     partitionTombstones, rowTombstones, rangeTombstones);
         }
     }
 }

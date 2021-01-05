@@ -76,8 +76,9 @@ public class View
     final Map<SSTableReader, SSTableReader> compactingMap;
 
     final SSTableIntervalTree intervalTree;
+    final Optional<SSTableTimeIntervalTree> timeIntervalTree;
 
-    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree)
+    View(List<Memtable> liveMemtables, List<Memtable> flushingMemtables, Map<SSTableReader, SSTableReader> sstables, Map<SSTableReader, SSTableReader> compacting, SSTableIntervalTree intervalTree, Optional<SSTableTimeIntervalTree> timeIntervalTree)
     {
         assert liveMemtables != null;
         assert flushingMemtables != null;
@@ -93,6 +94,7 @@ public class View
         this.compactingMap = compacting;
         this.compacting = compactingMap.keySet();
         this.intervalTree = intervalTree;
+        this.timeIntervalTree = timeIntervalTree;
     }
 
     public Memtable getCurrentMemtable()
@@ -175,7 +177,7 @@ public class View
     @Override
     public String toString()
     {
-        return String.format("View(pending_count=%d, sstables=%s, compacting=%s)", liveMemtables.size() + flushingMemtables.size() - 1, sstables, compacting);
+        return String.format("View(pending_count=%d, sstables=%s, compacting=%s, timeOrderedKey=%s)", liveMemtables.size() + flushingMemtables.size() - 1, sstables, compacting, timeIntervalTree.isPresent());
     }
 
     /**
@@ -191,6 +193,18 @@ public class View
 
         PartitionPosition stopInTree = right.isMinimum() ? intervalTree.max() : right;
         return intervalTree.search(Interval.create(left, stopInTree));
+    }
+
+    public Iterable<SSTableReader> liveSSTablesInTimeRange(long left, long right)
+    {
+        assert timeIntervalTree.isPresent();
+        SSTableTimeIntervalTree tree = timeIntervalTree.get();
+        if (tree.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+
+        return tree.search(Interval.create(left, right));
     }
 
     public static List<SSTableReader> sstablesInBounds(PartitionPosition left, PartitionPosition right, SSTableIntervalTree intervalTree)
@@ -221,7 +235,22 @@ public class View
     public static Function<View, Iterable<SSTableReader>> select(SSTableSet sstableSet, DecoratedKey key)
     {
         assert sstableSet == SSTableSet.LIVE;
-        return (view) -> view.intervalTree.search(key);
+        return (view) -> {
+            if(view.timeIntervalTree.isPresent())
+            {
+                return selectBasedOnTime(view, sstableSet, key);
+            }
+            else
+            {
+                return view.intervalTree.search(key);
+            }
+        };
+    }
+
+    private static Iterable<SSTableReader> selectBasedOnTime(View view, SSTableSet sstableSet, DecoratedKey key)
+    {
+        assert sstableSet == SSTableSet.LIVE;
+        return view.timeIntervalTree.get().searchByDecoratedKey(key);
     }
 
     /**
@@ -252,7 +281,7 @@ public class View
                 assert all(mark, Helpers.idIn(view.sstablesMap));
                 return new View(view.liveMemtables, view.flushingMemtables, view.sstablesMap,
                                 replace(view.compactingMap, unmark, mark),
-                                view.intervalTree);
+                                view.intervalTree, view.timeIntervalTree);
             }
         };
     }
@@ -284,7 +313,8 @@ public class View
             {
                 Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, remove, add);
                 return new View(view.liveMemtables, view.flushingMemtables, sstableMap, view.compactingMap,
-                                SSTableIntervalTree.build(sstableMap.keySet()));
+                                SSTableIntervalTree.build(sstableMap.keySet()),
+                                view.timeIntervalTree.map(oldTree -> SSTableTimeIntervalTree.build(sstableMap.keySet())));
             }
         };
     }
@@ -298,7 +328,7 @@ public class View
             {
                 List<Memtable> newLive = ImmutableList.<Memtable>builder().addAll(view.liveMemtables).add(newMemtable).build();
                 assert newLive.size() == view.liveMemtables.size() + 1;
-                return new View(newLive, view.flushingMemtables, view.sstablesMap, view.compactingMap, view.intervalTree);
+                return new View(newLive, view.flushingMemtables, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree);
             }
         };
     }
@@ -317,7 +347,7 @@ public class View
                                                            filter(flushing, not(lessThan(toFlush)))));
                 assert newLive.size() == live.size() - 1;
                 assert newFlushing.size() == flushing.size() + 1;
-                return new View(newLive, newFlushing, view.sstablesMap, view.compactingMap, view.intervalTree);
+                return new View(newLive, newFlushing, view.sstablesMap, view.compactingMap, view.intervalTree, view.timeIntervalTree);
             }
         };
     }
@@ -334,11 +364,12 @@ public class View
 
                 if (flushed == null || Iterables.isEmpty(flushed))
                     return new View(view.liveMemtables, flushingMemtables, view.sstablesMap,
-                                    view.compactingMap, view.intervalTree);
+                                    view.compactingMap, view.intervalTree, view.timeIntervalTree);
 
                 Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, emptySet(), flushed);
                 return new View(view.liveMemtables, flushingMemtables, sstableMap, view.compactingMap,
-                                SSTableIntervalTree.build(sstableMap.keySet()));
+                                SSTableIntervalTree.build(sstableMap.keySet()),
+                                view.timeIntervalTree.map(oldTree -> SSTableTimeIntervalTree.build(sstableMap.keySet())));
             }
         };
     }

@@ -380,6 +380,10 @@ public class SSTableMetadataViewer
             field("totalColumnsSet", stats.totalColumnsSet);
             field("totalRows", stats.totalRows);
             field("Estimated tombstone drop times", "");
+            field("KeyRange", "(" + stats.minKey + "," + stats.maxKey + ")");
+            field("PartitionTombstones", stats.partitionTombstones);
+            field("RowTombstones", stats.rowTombstones);
+            field("RangeTombstones", stats.rangeTombstones);
 
             TermHistogram estDropped = new TermHistogram(stats.estimatedTombstoneDropTime,
                                                          "Drop Time",

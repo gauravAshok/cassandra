@@ -52,7 +52,7 @@ public class SSTableWriterTest extends SSTableWriterTestBase
         truncate(cfs);
 
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE, cfs.metadata().params.timeOrderedKey);
         try (SSTableWriter writer = getWriter(cfs, dir, txn))
         {
             for (int i = 0; i < 10000; i++)
@@ -107,7 +107,7 @@ public class SSTableWriterTest extends SSTableWriterTestBase
         truncate(cfs);
 
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM, cfs.metadata().params.timeOrderedKey);
         try (SSTableWriter writer = getWriter(cfs, dir, txn))
         {
             for (int i = 0; i < 10000; i++)
@@ -155,7 +155,7 @@ public class SSTableWriterTest extends SSTableWriterTestBase
         truncate(cfs);
 
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM, cfs.metadata().params.timeOrderedKey);
 
         SSTableWriter writer1 = getWriter(cfs, dir, txn);
         SSTableWriter writer2 = getWriter(cfs, dir, txn);
@@ -213,7 +213,7 @@ public class SSTableWriterTest extends SSTableWriterTestBase
         truncate(cfs);
 
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM, cfs.metadata().params.timeOrderedKey);
 
         try (SSTableWriter writer1 = getWriter(cfs, dir, txn))
         {
@@ -254,7 +254,7 @@ public class SSTableWriterTest extends SSTableWriterTestBase
         Keyspace keyspace = Keyspace.open(KEYSPACE);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF_SMALL_MAX_VALUE);
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM, cfs.metadata().params.timeOrderedKey);
 
         try (SSTableWriter writer = getWriter(cfs, dir, txn, repairedAt, pendingRepair, isTransient))
         {
@@ -274,7 +274,7 @@ public class SSTableWriterTest extends SSTableWriterTestBase
         Keyspace keyspace = Keyspace.open(KEYSPACE);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF_SMALL_MAX_VALUE);
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.STREAM, cfs.metadata().params.timeOrderedKey);
 
         try (SSTableWriter writer = getWriter(cfs, dir, txn, repairedAt, pendingRepair, isTransient))
         {

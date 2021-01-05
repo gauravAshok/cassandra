@@ -334,7 +334,7 @@ public class ScrubTest
             List<String> keys = Arrays.asList("t", "a", "b", "z", "c", "y", "d");
             Descriptor desc = cfs.newSSTableDescriptor(tempDataDir);
 
-            LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE);
+            LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE, cfs.metadata().params.timeOrderedKey);
             try (SSTableTxnWriter writer = new SSTableTxnWriter(txn, createTestWriter(desc, (long) keys.size(), cfs.metadata, txn)))
             {
 
@@ -372,7 +372,7 @@ public class ScrubTest
             if (sstable.last.compareTo(sstable.first) < 0)
                 sstable.last = sstable.first;
 
-            try (LifecycleTransaction scrubTxn = LifecycleTransaction.offline(OperationType.SCRUB, sstable);
+            try (LifecycleTransaction scrubTxn = LifecycleTransaction.offline(OperationType.SCRUB, sstable, cfs.metadata().params.timeOrderedKey);
                  Scrubber scrubber = new Scrubber(cfs, scrubTxn, false, true))
             {
                 scrubber.scrub();
@@ -615,7 +615,7 @@ public class ScrubTest
     private static SSTableMultiWriter createTestWriter(Descriptor descriptor, long keyCount, TableMetadataRef metadata, LifecycleTransaction txn)
     {
         SerializationHeader header = new SerializationHeader(true, metadata.get(), metadata.get().regularAndStaticColumns(), EncodingStats.NO_STATS);
-        MetadataCollector collector = new MetadataCollector(metadata.get().comparator).sstableLevel(0);
+        MetadataCollector collector = new MetadataCollector(metadata.get().comparator, metadata.get().params.timeOrderedKey).sstableLevel(0);
         return new TestMultiWriter(new TestWriter(descriptor, keyCount, 0, null, false, metadata, collector, header, txn), txn);
     }
 

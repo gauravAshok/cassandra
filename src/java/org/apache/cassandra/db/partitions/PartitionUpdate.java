@@ -20,8 +20,6 @@ package org.apache.cassandra.db.partitions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 
 import com.google.common.collect.Iterables;
@@ -38,7 +36,6 @@ import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.btree.BTree;
 import org.apache.cassandra.utils.btree.UpdateFunction;
 
@@ -68,6 +65,8 @@ public class PartitionUpdate extends AbstractBTreePartition
 
     private final boolean canHaveShadowedData;
 
+    private RowsType rowsType;
+
     private PartitionUpdate(TableMetadata metadata,
                             DecoratedKey key,
                             Holder holder,
@@ -79,6 +78,7 @@ public class PartitionUpdate extends AbstractBTreePartition
         this.holder = holder;
         this.deletionInfo = deletionInfo;
         this.canHaveShadowedData = canHaveShadowedData;
+        this.rowsType = holder.rowsType;
     }
 
     /**
@@ -92,7 +92,7 @@ public class PartitionUpdate extends AbstractBTreePartition
     public static PartitionUpdate emptyUpdate(TableMetadata metadata, DecoratedKey key)
     {
         MutableDeletionInfo deletionInfo = MutableDeletionInfo.live();
-        Holder holder = new Holder(RegularAndStaticColumns.NONE, BTree.empty(), deletionInfo, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS);
+        Holder holder = new Holder(RegularAndStaticColumns.NONE, BTree.empty(), deletionInfo, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS, RowsType.NONE);
         return new PartitionUpdate(metadata, key, holder, deletionInfo, false);
     }
 
@@ -109,7 +109,7 @@ public class PartitionUpdate extends AbstractBTreePartition
     public static PartitionUpdate fullPartitionDelete(TableMetadata metadata, DecoratedKey key, long timestamp, int nowInSec)
     {
         MutableDeletionInfo deletionInfo = new MutableDeletionInfo(timestamp, nowInSec);
-        Holder holder = new Holder(RegularAndStaticColumns.NONE, BTree.empty(), deletionInfo, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS);
+        Holder holder = new Holder(RegularAndStaticColumns.NONE, BTree.empty(), deletionInfo, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS, RowsType.NONE);
         return new PartitionUpdate(metadata, key, holder, deletionInfo, false);
     }
 
@@ -134,7 +134,8 @@ public class PartitionUpdate extends AbstractBTreePartition
             row == null ? BTree.empty() : BTree.singleton(row),
             deletionInfo,
             staticRow == null ? Rows.EMPTY_STATIC_ROW : staticRow,
-            EncodingStats.NO_STATS
+            EncodingStats.NO_STATS,
+            row == null || row.deletion().isLive() ? RowsType.DATA : RowsType.TOMBSTONE
         );
         return new PartitionUpdate(metadata, key, holder, deletionInfo, false);
     }
@@ -650,22 +651,30 @@ public class PartitionUpdate extends AbstractBTreePartition
             BTree.Builder<Row> rows = BTree.builder(metadata.comparator, header.rowEstimate);
             rows.auto(false);
 
+            RowsType type = RowsType.NONE;
             try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, flag, header))
             {
                 while (partition.hasNext())
                 {
                     Unfiltered unfiltered = partition.next();
                     if (unfiltered.kind() == Unfiltered.Kind.ROW)
-                        rows.add((Row)unfiltered);
+                    {
+                        Row row = (Row) unfiltered;
+                        rows.add(row);
+                        type = type.or(row);
+                    }
                     else
-                        deletionBuilder.add((RangeTombstoneMarker)unfiltered);
+                    {
+                        deletionBuilder.add((RangeTombstoneMarker) unfiltered);
+                        type = type.or(RowsType.TOMBSTONE);
+                    }
                 }
             }
 
             MutableDeletionInfo deletionInfo = deletionBuilder.build();
             return new PartitionUpdate(metadata,
                                        header.key,
-                                       new Holder(header.sHeader.columns(), rows.build(), deletionInfo, header.staticRow, header.sHeader.stats()),
+                                       new Holder(header.sHeader.columns(), rows.build(), deletionInfo, header.staticRow, header.sHeader.stats(), type),
                                        deletionInfo,
                                        false);
         }
@@ -745,6 +754,7 @@ public class PartitionUpdate extends AbstractBTreePartition
         private Row staticRow = Rows.EMPTY_STATIC_ROW;
         private final RegularAndStaticColumns columns;
         private boolean isBuilt = false;
+        private RowsType rowsType;
 
         public Builder(TableMetadata metadata,
                        DecoratedKey key,
@@ -752,7 +762,7 @@ public class PartitionUpdate extends AbstractBTreePartition
                        int initialRowCapacity,
                        boolean canHaveShadowedData)
         {
-            this(metadata, key, columns, initialRowCapacity, canHaveShadowedData, Rows.EMPTY_STATIC_ROW, MutableDeletionInfo.live(), BTree.empty());
+            this(metadata, key, columns, initialRowCapacity, canHaveShadowedData, Rows.EMPTY_STATIC_ROW, MutableDeletionInfo.live(), BTree.empty(), RowsType.NONE);
         }
 
         private Builder(TableMetadata metadata,
@@ -762,7 +772,7 @@ public class PartitionUpdate extends AbstractBTreePartition
                        boolean canHaveShadowedData,
                        Holder holder)
         {
-            this(metadata, key, columns, initialRowCapacity, canHaveShadowedData, holder.staticRow, holder.deletionInfo, holder.tree);
+            this(metadata, key, columns, initialRowCapacity, canHaveShadowedData, holder.staticRow, holder.deletionInfo, holder.tree, holder.rowsType);
         }
 
         private Builder(TableMetadata metadata,
@@ -772,7 +782,8 @@ public class PartitionUpdate extends AbstractBTreePartition
                         boolean canHaveShadowedData,
                         Row staticRow,
                         DeletionInfo deletionInfo,
-                        Object[] tree)
+                        Object[] tree,
+                        RowsType rowsType)
         {
             this.metadata = metadata;
             this.key = key;
@@ -782,6 +793,7 @@ public class PartitionUpdate extends AbstractBTreePartition
             this.deletionInfo = deletionInfo.mutableCopy();
             this.staticRow = staticRow;
             this.tree = tree;
+            this.rowsType = rowsType;
         }
 
         public Builder(TableMetadata metadata, DecoratedKey key, RegularAndStaticColumns columnDefinitions, int size)
@@ -833,6 +845,7 @@ public class PartitionUpdate extends AbstractBTreePartition
                 // or introducing a new class of assertions for test purposes
                 assert columns().regulars.containsAll(row.columns()) : columns().regulars + " is not superset of " + row.columns();
                 rowBuilder.add(row);
+                rowsType = rowsType.or(row);
             }
         }
 
@@ -844,6 +857,7 @@ public class PartitionUpdate extends AbstractBTreePartition
         public void add(RangeTombstone range)
         {
             deletionInfo.add(range, metadata.comparator);
+            rowsType.or(RowsType.TOMBSTONE);
         }
 
         public DecoratedKey partitionKey()
@@ -873,7 +887,8 @@ public class PartitionUpdate extends AbstractBTreePartition
                                                   merged,
                                                   deletionInfo,
                                                   staticRow,
-                                                  newStats),
+                                                  newStats,
+                                                  rowsType),
                                        deletionInfo,
                                        canHaveShadowedData);
         }

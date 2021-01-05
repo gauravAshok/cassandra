@@ -146,6 +146,7 @@ public class CassandraStreamManager implements TableStreamManager
             List<Range<Token>> normalizedAllRanges = Range.normalize(replicas.ranges());
             //Create outgoing file streams for ranges possibly skipping repaired ranges in sstables
             List<OutgoingStream> streams = new ArrayList<>(refs.size());
+            boolean keepSSTableLevel = cfs.metadata().params.timeOrderedKey;
             for (SSTableReader sstable : refs)
             {
                 List<Range<Token>> ranges = sstable.isRepaired() ? normalizedFullRanges : normalizedAllRanges;
@@ -158,7 +159,7 @@ public class CassandraStreamManager implements TableStreamManager
                     continue;
                 }
                 streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, ranges,
-                                                      sstable.estimatedKeysForRanges(ranges)));
+                                                      sstable.estimatedKeysForRanges(ranges), keepSSTableLevel));
             }
 
             return streams;

@@ -81,7 +81,7 @@ public class SSTableFlushObserverTest
                          .addRegularColumn("height", LongType.instance)
                          .build();
 
-        LifecycleTransaction transaction = LifecycleTransaction.offline(OperationType.COMPACTION);
+        LifecycleTransaction transaction = LifecycleTransaction.offline(OperationType.COMPACTION, cfm.params.timeOrderedKey);
         FlushObserver observer = new FlushObserver();
 
         String sstableDirectory = DatabaseDescriptor.getAllDataFileLocations()[0];
@@ -99,7 +99,7 @@ public class SSTableFlushObserverTest
                                                                   0,
                                                                   sstableFormat),
                                                    10L, 0L, null, false, TableMetadataRef.forOfflineTools(cfm),
-                                                   new MetadataCollector(cfm.comparator).sstableLevel(0),
+                                                   new MetadataCollector(cfm.comparator, cfm.params.timeOrderedKey).sstableLevel(0),
                                                    new SerializationHeader(true, cfm, cfm.regularAndStaticColumns(), EncodingStats.NO_STATS),
                                                    Collections.singletonList(observer),
                                                    transaction);

@@ -32,8 +32,8 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.streaming.PreviewKind;
+import org.apache.cassandra.utils.TimeWindow;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
@@ -52,25 +52,32 @@ public class RepairJobDesc
     public final String columnFamily;
     /** repairing range  */
     public final Collection<Range<Token>> ranges;
+    public final TimeWindow timeWindow;
 
     public RepairJobDesc(UUID parentSessionId, UUID sessionId, String keyspace, String columnFamily, Collection<Range<Token>> ranges)
+    {
+        this(parentSessionId, sessionId, keyspace, columnFamily, ranges, TimeWindow.ALL);
+    }
+
+    public RepairJobDesc(UUID parentSessionId, UUID sessionId, String keyspace, String columnFamily, Collection<Range<Token>> ranges, TimeWindow timeWindow)
     {
         this.parentSessionId = parentSessionId;
         this.sessionId = sessionId;
         this.keyspace = keyspace;
         this.columnFamily = columnFamily;
         this.ranges = ranges;
+        this.timeWindow = timeWindow;
     }
 
     @Override
     public String toString()
     {
-        return "[repair #" + sessionId + " on " + keyspace + "/" + columnFamily + ", " + ranges + "]";
+        return "[repair #" + sessionId + " on " + keyspace + "/" + columnFamily + ", " + ranges + ", timeWindow: " + timeWindow + "]";
     }
 
     public String toString(PreviewKind previewKind)
     {
-        return '[' + previewKind.logPrefix() + " #" + sessionId + " on " + keyspace + "/" + columnFamily + ", " + ranges + "]";
+        return '[' + previewKind.logPrefix() + " #" + sessionId + " on " + keyspace + "/" + columnFamily + ", " + ranges + ", timeWindow: " + timeWindow + "]";
     }
 
     @Override
@@ -85,7 +92,7 @@ public class RepairJobDesc
         if (!keyspace.equals(that.keyspace)) return false;
         if (ranges != null ? that.ranges == null || (ranges.size() != that.ranges.size()) || (ranges.size() == that.ranges.size() && !ranges.containsAll(that.ranges)) : that.ranges != null) return false;
         if (!sessionId.equals(that.sessionId)) return false;
-        if (parentSessionId != null ? !parentSessionId.equals(that.parentSessionId) : that.parentSessionId != null) return false;
+        if (!java.util.Objects.equals(parentSessionId, that.parentSessionId)) return false;
 
         return true;
     }
@@ -107,10 +114,13 @@ public class RepairJobDesc
             UUIDSerializer.serializer.serialize(desc.sessionId, out, version);
             out.writeUTF(desc.keyspace);
             out.writeUTF(desc.columnFamily);
+            out.writeLong(desc.timeWindow.start);
+            out.writeLong(desc.timeWindow.end);
             IPartitioner.validate(desc.ranges);
             out.writeInt(desc.ranges.size());
             for (Range<Token> rt : desc.ranges)
                 AbstractBounds.tokenSerializer.serialize(rt, out, version);
+
         }
 
         public RepairJobDesc deserialize(DataInputPlus in, int version) throws IOException
@@ -121,6 +131,8 @@ public class RepairJobDesc
             UUID sessionId = UUIDSerializer.serializer.deserialize(in, version);
             String keyspace = in.readUTF();
             String columnFamily = in.readUTF();
+            long startTime = in.readLong();
+            long endTime = in.readLong();
 
             int nRanges = in.readInt();
             Collection<Range<Token>> ranges = new ArrayList<>(nRanges);
@@ -133,7 +145,7 @@ public class RepairJobDesc
                 ranges.add(range);
             }
 
-            return new RepairJobDesc(parentSessionId, sessionId, keyspace, columnFamily, ranges);
+            return new RepairJobDesc(parentSessionId, sessionId, keyspace, columnFamily, ranges, TimeWindow.fromLimits(startTime, endTime));
         }
 
         public long serializedSize(RepairJobDesc desc, int version)
@@ -144,6 +156,8 @@ public class RepairJobDesc
             size += UUIDSerializer.serializer.serializedSize(desc.sessionId, version);
             size += TypeSizes.sizeof(desc.keyspace);
             size += TypeSizes.sizeof(desc.columnFamily);
+            size += TypeSizes.sizeof(desc.timeWindow.start);
+            size += TypeSizes.sizeof(desc.timeWindow.end);
             size += TypeSizes.sizeof(desc.ranges.size());
             for (Range<Token> rt : desc.ranges)
             {

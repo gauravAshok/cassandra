@@ -109,7 +109,7 @@ public class SplittingSizeTieredCompactionWriter extends CompactionAwareWriter
                                                     pendingRepair,
                                                     isTransient,
                                                     cfs.metadata,
-                                                    new MetadataCollector(allSSTables, cfs.metadata().comparator, 0),
+                                                    new MetadataCollector(allSSTables, cfs.metadata().comparator, cfs.metadata().params.timeOrderedKey, 0),
                                                     SerializationHeader.make(cfs.metadata(), nonExpiredSSTables),
                                                     cfs.indexManager.listIndexes(),
                                                     txn);

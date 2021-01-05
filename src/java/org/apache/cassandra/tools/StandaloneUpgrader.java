@@ -103,7 +103,7 @@ public class StandaloneUpgrader
 
             for (SSTableReader sstable : readers)
             {
-                try (LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.UPGRADE_SSTABLES, sstable))
+                try (LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.UPGRADE_SSTABLES, sstable, cfs.metadata().params.timeOrderedKey))
                 {
                     Upgrader upgrader = new Upgrader(cfs, txn, handler);
                     upgrader.upgrade(options.keepSource);

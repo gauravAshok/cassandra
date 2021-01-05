@@ -51,6 +51,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 
 import org.apache.cassandra.locator.RangesAtEndpoint;
+import org.apache.cassandra.utils.TimeWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -563,10 +564,11 @@ public class LocalSessions
                                     UUID sessionID,
                                     Collection<ColumnFamilyStore> tables,
                                     RangesAtEndpoint tokenRanges,
+                                    TimeWindow timeWindow,
                                     ExecutorService executor,
                                     BooleanSupplier isCancelled)
     {
-        return repairManager.prepareIncrementalRepair(sessionID, tables, tokenRanges, executor, isCancelled);
+        return repairManager.prepareIncrementalRepair(sessionID, tables, tokenRanges, timeWindow, executor, isCancelled);
     }
 
     RangesAtEndpoint filterLocalRanges(String keyspace, Set<Range<Token>> ranges)
@@ -620,14 +622,14 @@ public class LocalSessions
 
         LocalSession session = createSessionUnsafe(sessionID, parentSession, peers);
         putSessionUnsafe(session);
-        logger.info("Beginning local incremental repair session {}", session);
+        logger.info("Beginning local incremental repair for timeWindow: {}, session {}", parentSession.getTimeWindow(), session);
 
         ExecutorService executor = Executors.newFixedThreadPool(parentSession.getColumnFamilyStores().size());
 
         KeyspaceRepairManager repairManager = parentSession.getKeyspace().getRepairManager();
         RangesAtEndpoint tokenRanges = filterLocalRanges(parentSession.getKeyspace().getName(), parentSession.getRanges());
         ListenableFuture repairPreparation = prepareSession(repairManager, sessionID, parentSession.getColumnFamilyStores(),
-                                                            tokenRanges, executor, () -> session.getState() != PREPARING);
+                                                            tokenRanges, parentSession.getTimeWindow(), executor, () -> session.getState() != PREPARING);
 
         Futures.addCallback(repairPreparation, new FutureCallback<Object>()
         {

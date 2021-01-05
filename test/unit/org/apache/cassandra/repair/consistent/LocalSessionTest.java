@@ -35,6 +35,7 @@ import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 
+import org.apache.cassandra.utils.TimeWindow;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -142,6 +143,7 @@ public class LocalSessionTest extends AbstractRepairTest
                                         UUID sessionID,
                                         Collection<ColumnFamilyStore> tables,
                                         RangesAtEndpoint ranges,
+                                        TimeWindow timeWindow,
                                         ExecutorService executor,
                                         BooleanSupplier isCancelled)
         {
@@ -152,7 +154,7 @@ public class LocalSessionTest extends AbstractRepairTest
             }
             else
             {
-                return super.prepareSession(repairManager, sessionID, tables, ranges, executor, isCancelled);
+                return super.prepareSession(repairManager, sessionID, tables, ranges, timeWindow, executor, isCancelled);
             }
         }
 
@@ -352,7 +354,7 @@ public class LocalSessionTest extends AbstractRepairTest
         SettableFuture future = SettableFuture.create();
 
         InstrumentedLocalSessions sessions = new InstrumentedLocalSessions() {
-            ListenableFuture prepareSession(KeyspaceRepairManager repairManager, UUID sessionID, Collection<ColumnFamilyStore> tables, RangesAtEndpoint ranges, ExecutorService executor, BooleanSupplier isCancelled)
+            ListenableFuture prepareSession(KeyspaceRepairManager repairManager, UUID sessionID, Collection<ColumnFamilyStore> tables, RangesAtEndpoint ranges, TimeWindow timeWindow, ExecutorService executor, BooleanSupplier isCancelled)
             {
                 isCancelledRef.set(isCancelled);
                 return future;

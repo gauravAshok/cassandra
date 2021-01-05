@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.*;
+import org.apache.cassandra.utils.TimeWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -95,6 +96,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
 
     /** Range to repair */
     public final CommonRange commonRange;
+    public final TimeWindow timeWindow;
     public final boolean isIncremental;
     public final PreviewKind previewKind;
 
@@ -125,6 +127,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     public RepairSession(UUID parentRepairSession,
                          UUID id,
                          CommonRange commonRange,
+                         TimeWindow timeWindow,
                          String keyspace,
                          RepairParallelism parallelismDegree,
                          boolean isIncremental,
@@ -168,6 +171,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         }
 
         this.commonRange = commonRange;
+        this.timeWindow = timeWindow;
         this.isIncremental = isIncremental;
         this.previewKind = previewKind;
         this.pullRepair = pullRepair;
@@ -278,7 +282,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         if (terminated)
             return;
 
-        logger.info("{} new session: will sync {} on range {} for {}.{}", previewKind.logPrefix(getId()), repairedNodes(), commonRange, keyspace, Arrays.toString(cfnames));
+        logger.info("{} new session: will sync {} on range {} & timeWindow {} for {}.{}", previewKind.logPrefix(getId()), repairedNodes(), commonRange, timeWindow, keyspace, Arrays.toString(cfnames));
         Tracing.traceRepair("Syncing range {}", commonRange);
         if (!previewKind.isPreview())
         {

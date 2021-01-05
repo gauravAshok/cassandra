@@ -40,7 +40,7 @@ public class ImmutableBTreePartition extends AbstractBTreePartition
     {
         super(partitionKey);
         this.metadata = metadata;
-        this.holder = new Holder(columns, tree, deletionInfo, staticRow, stats);
+        this.holder = new Holder(columns, tree, deletionInfo, staticRow, stats, RowsType.ANY);
     }
 
     protected ImmutableBTreePartition(TableMetadata metadata,

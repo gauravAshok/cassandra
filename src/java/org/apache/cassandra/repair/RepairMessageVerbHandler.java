@@ -83,6 +83,7 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
                                                                              message.from(),
                                                                              columnFamilyStores,
                                                                              prepareMessage.ranges,
+                                                                             prepareMessage.timeWindow,
                                                                              prepareMessage.isIncremental,
                                                                              prepareMessage.timestamp,
                                                                              prepareMessage.isGlobal,
@@ -104,11 +105,11 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
                     TableRepairManager repairManager = cfs.getRepairManager();
                     if (prs.isGlobal)
                     {
-                        repairManager.snapshot(desc.parentSessionId.toString(), prs.getRanges(), false);
+                        repairManager.snapshot(desc.parentSessionId.toString(), prs.getRanges(), prs.getTimeWindow(), false);
                     }
                     else
                     {
-                        repairManager.snapshot(desc.parentSessionId.toString(), desc.ranges, true);
+                        repairManager.snapshot(desc.parentSessionId.toString(), desc.ranges, prs.getTimeWindow(), true);
                     }
                     logger.debug("Enqueuing response to snapshot request {} to {}", desc.sessionId, message.from());
                     MessagingService.instance().send(message.emptyResponse(), message.from());

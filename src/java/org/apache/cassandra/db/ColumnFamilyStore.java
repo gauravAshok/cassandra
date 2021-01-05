@@ -88,8 +88,6 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
-import static org.apache.cassandra.utils.ExecutorUtils.awaitTermination;
-import static org.apache.cassandra.utils.ExecutorUtils.shutdown;
 import static org.apache.cassandra.utils.Throwables.maybeFail;
 import static org.apache.cassandra.utils.Throwables.merge;
 
@@ -401,7 +399,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         Memtable initialMemtable = null;
         if (DatabaseDescriptor.isDaemonInitialized())
             initialMemtable = new Memtable(new AtomicReference<>(CommitLog.instance.getCurrentPosition()), this);
-        data = new Tracker(initialMemtable, loadSSTables);
+        data = new Tracker(initialMemtable, loadSSTables, metadata.get().params.timeOrderedKey);
 
         // scan for sstables corresponding to this cf and load them
         if (data.loadsstables)
@@ -490,7 +488,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public SSTableMultiWriter createSSTableMultiWriter(Descriptor descriptor, long keyCount, long repairedAt, UUID pendingRepair, boolean isTransient, int sstableLevel, SerializationHeader header, LifecycleNewTracker lifecycleNewTracker)
     {
-        MetadataCollector collector = new MetadataCollector(metadata().comparator).sstableLevel(sstableLevel);
+        MetadataCollector collector = new MetadataCollector(metadata().comparator, metadata().params.timeOrderedKey).sstableLevel(sstableLevel);
         return createSSTableMultiWriter(descriptor, keyCount, repairedAt, pendingRepair, isTransient, collector, header, lifecycleNewTracker);
     }
 
@@ -1052,15 +1050,15 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 return Collections.emptyList();
             }
 
-            List<Future<SSTableMultiWriter>> futures = new ArrayList<>();
+            List<Future<SSTableMultiWriter[]>> futures = new ArrayList<>();
             long totalBytesOnDisk = 0;
             long maxBytesOnDisk = 0;
             long minBytesOnDisk = Long.MAX_VALUE;
             List<SSTableReader> sstables = new ArrayList<>();
-            try (LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.FLUSH))
+            try (LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.FLUSH, memtable.cfs.metadata().params.timeOrderedKey))
             {
                 List<Memtable.FlushRunnable> flushRunnables = null;
-                List<SSTableMultiWriter> flushResults = null;
+                List<SSTableMultiWriter> flushResults = new ArrayList<>();
 
                 try
                 {
@@ -1079,7 +1077,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     if (flushNonCf2i)
                         indexManager.flushAllNonCFSBackedIndexesBlocking();
 
-                    flushResults = Lists.newArrayList(FBUtilities.waitOnFutures(futures));
+                    List<SSTableMultiWriter[]> futureResults = Lists.newArrayList(FBUtilities.waitOnFutures(futures));
+                    futureResults.forEach(r -> {
+                        if(r != null)
+                            for (SSTableMultiWriter writer : r)
+                                flushResults.add(writer);
+                    });
                 }
                 catch (Throwable t)
                 {
@@ -2080,7 +2083,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             {
                 public Void call()
                 {
-                    cfs.data.reset(new Memtable(new AtomicReference<>(CommitLogPosition.NONE), cfs));
+                    cfs.data.reset(new Memtable(new AtomicReference<>(CommitLogPosition.NONE), cfs), cfs.metadata().params.timeOrderedKey);
                     return null;
                 }
             }, true, false);

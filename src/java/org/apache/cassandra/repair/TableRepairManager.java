@@ -26,6 +26,7 @@ import java.util.concurrent.Future;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.utils.TimeWindow;
 
 /**
  * Table level hook for repair
@@ -60,5 +61,10 @@ public interface TableRepairManager
      * For snapshot repairs. A snapshot of the current data for the given ranges should be taken with the given name.
      * If force is true, a snapshot should be taken even if one already exists with that name.
      */
-    void snapshot(String name, Collection<Range<Token>> ranges, boolean force);
+    void snapshot(String name, Collection<Range<Token>> ranges, TimeWindow timeWindow, boolean force);
+
+    default void snapshot(String name, Collection<Range<Token>> ranges, boolean force)
+    {
+        snapshot(name, ranges, TimeWindow.ALL, force);
+    }
 }

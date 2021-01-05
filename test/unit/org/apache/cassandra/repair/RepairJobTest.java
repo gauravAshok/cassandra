@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ListenableFuture;
+import org.apache.cassandra.utils.*;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -60,12 +61,6 @@ import org.apache.cassandra.repair.messages.SyncRequest;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.streaming.PreviewKind;
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.MerkleTree;
-import org.apache.cassandra.utils.MerkleTrees;
-import org.apache.cassandra.utils.ObjectSizes;
-import org.apache.cassandra.utils.UUIDGen;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -105,7 +100,7 @@ public class RepairJobTest
                                         RepairParallelism parallelismDegree, boolean isIncremental, boolean pullRepair,
                                         boolean force, PreviewKind previewKind, boolean optimiseStreams, String... cfnames)
         {
-            super(parentRepairSession, id, commonRange, keyspace, parallelismDegree, isIncremental, pullRepair, force, previewKind, optimiseStreams, cfnames);
+            super(parentRepairSession, id, commonRange, TimeWindow.ALL, keyspace, parallelismDegree, isIncremental, pullRepair, force, previewKind, optimiseStreams, cfnames);
         }
 
         protected DebuggableThreadPoolExecutor createExecutor()

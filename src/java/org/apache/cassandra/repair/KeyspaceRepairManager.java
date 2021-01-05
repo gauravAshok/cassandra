@@ -27,6 +27,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.locator.RangesAtEndpoint;
+import org.apache.cassandra.utils.TimeWindow;
 
 /**
  * Keyspace level hook for repair.
@@ -41,6 +42,7 @@ public interface KeyspaceRepairManager
     ListenableFuture prepareIncrementalRepair(UUID sessionID,
                                               Collection<ColumnFamilyStore> tables,
                                               RangesAtEndpoint tokenRanges,
+                                              TimeWindow timeWindow,
                                               ExecutorService executor,
                                               BooleanSupplier isCancelled);
 }

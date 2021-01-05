@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.io.sstable.format;
 
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 
@@ -68,6 +69,10 @@ public abstract class Version
 
     public abstract boolean hasAccurateMinMax();
 
+    public abstract boolean hasFirstKeyRange();
+
+    public abstract boolean hasTombstoneCounts();
+
     public String getVersion()
     {
         return version;
@@ -106,7 +111,7 @@ public abstract class Version
 
         Version version1 = (Version) o;
 
-        if (version != null ? !version.equals(version1.version) : version1.version != null) return false;
+        if (!Objects.equals(version, version1.version)) return false;
 
         return true;
     }

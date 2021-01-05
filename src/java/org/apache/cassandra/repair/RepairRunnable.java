@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -39,6 +38,7 @@ import com.google.common.util.concurrent.*;
 
 import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.utils.*;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,10 +72,6 @@ import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.messages.ResultMessage;
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.UUIDGen;
-import org.apache.cassandra.utils.WrappedRunnable;
 import org.apache.cassandra.utils.progress.ProgressEvent;
 import org.apache.cassandra.utils.progress.ProgressEventNotifier;
 import org.apache.cassandra.utils.progress.ProgressEventType;
@@ -287,7 +283,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         }
         else if (options.isIncremental())
         {
-            incrementalRepair(parentSession, startTime, force, traceState, allNeighbors, commonRanges, cfnames);
+            incrementalRepair(parentSession, startTime, force, traceState, allNeighbors, commonRanges, options.timeWindow(), cfnames);
         }
         else
         {
@@ -306,7 +302,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         ListeningExecutorService executor = createExecutor();
 
         // Setting the repairedAt time to UNREPAIRED_SSTABLE causes the repairedAt times to be preserved across streamed sstables
-        final ListenableFuture<List<RepairSessionResult>> allSessions = submitRepairSessions(parentSession, false, executor, commonRanges, cfnames);
+        final ListenableFuture<List<RepairSessionResult>> allSessions = submitRepairSessions(parentSession, false, executor, commonRanges, TimeWindow.ALL, cfnames);
 
         // After all repair sessions completes(successful or not),
         // run anticompaction if necessary and send finish notice back to client
@@ -377,6 +373,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                    TraceState traceState,
                                    Set<InetAddressAndPort> allNeighbors,
                                    List<CommonRange> commonRanges,
+                                   TimeWindow timeWindow,
                                    String... cfnames)
     {
         // the local node also needs to be included in the set of participants, since coordinator sessions aren't persisted
@@ -390,7 +387,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         CoordinatorSession coordinatorSession = ActiveRepairService.instance.consistent.coordinated.registerSession(parentSession, allParticipants, forceRepair);
         ListeningExecutorService executor = createExecutor();
         AtomicBoolean hasFailure = new AtomicBoolean(false);
-        ListenableFuture repairResult = coordinatorSession.execute(() -> submitRepairSessions(parentSession, true, executor, allRanges, cfnames),
+        ListenableFuture repairResult = coordinatorSession.execute(() -> submitRepairSessions(parentSession, true, executor, allRanges, timeWindow, cfnames),
                                                                    hasFailure);
         Collection<Range<Token>> ranges = new HashSet<>();
         for (Collection<Range<Token>> range : Iterables.transform(allRanges, cr -> cr.ranges))
@@ -410,7 +407,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         // Set up RepairJob executor for this repair command.
         ListeningExecutorService executor = createExecutor();
 
-        final ListenableFuture<List<RepairSessionResult>> allSessions = submitRepairSessions(parentSession, false, executor, commonRanges, cfnames);
+        final ListenableFuture<List<RepairSessionResult>> allSessions = submitRepairSessions(parentSession, false, executor, commonRanges, TimeWindow.ALL, cfnames);
 
         Futures.addCallback(allSessions, new FutureCallback<List<RepairSessionResult>>()
         {
@@ -479,6 +476,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                                                              boolean isIncremental,
                                                                              ListeningExecutorService executor,
                                                                              List<CommonRange> commonRanges,
+                                                                             TimeWindow timeWindow,
                                                                              String... cfnames)
     {
         List<ListenableFuture<RepairSessionResult>> futures = new ArrayList<>(options.getRanges().size());
@@ -491,6 +489,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             logger.info("Starting RepairSession for {}", commonRange);
             RepairSession session = ActiveRepairService.instance.submitRepairSession(parentSession,
                                                                                      commonRange,
+                                                                                     timeWindow,
                                                                                      keyspace,
                                                                                      options.getParallelism(),
                                                                                      isIncremental,

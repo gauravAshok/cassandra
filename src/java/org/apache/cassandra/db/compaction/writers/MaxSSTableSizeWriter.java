@@ -113,7 +113,7 @@ public class MaxSSTableSizeWriter extends CompactionAwareWriter
                                                     pendingRepair,
                                                     isTransient,
                                                     cfs.metadata,
-                                                    new MetadataCollector(allSSTables, cfs.metadata().comparator, level),
+                                                    new MetadataCollector(allSSTables, cfs.metadata().comparator, cfs.metadata().params.timeOrderedKey, level),
                                                     SerializationHeader.make(cfs.metadata(), nonExpiredSSTables),
                                                     cfs.indexManager.listIndexes(),
                                                     txn);

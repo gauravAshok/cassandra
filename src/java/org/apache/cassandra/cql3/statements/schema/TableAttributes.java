@@ -140,6 +140,9 @@ public final class TableAttributes extends PropertyDefinitions
         if (hasOption(Option.READ_REPAIR))
             builder.readRepair(ReadRepairStrategy.fromString(getString(Option.READ_REPAIR)));
 
+        if (hasOption(Option.TIME_ORDERED_KEY))
+            builder.timeOrderedKey(getBoolean(Option.TIME_ORDERED_KEY.toString(), false));
+
         return builder.build();
     }
 

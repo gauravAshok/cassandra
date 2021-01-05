@@ -31,7 +31,57 @@ import static org.apache.cassandra.utils.btree.BTree.Dir.desc;
 
 public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
 {
-    protected static final Holder EMPTY = new Holder(RegularAndStaticColumns.NONE, BTree.empty(), DeletionInfo.LIVE, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS);
+    protected static final Holder EMPTY = new Holder(RegularAndStaticColumns.NONE, BTree.empty(), DeletionInfo.LIVE, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS, RowsType.NONE);
+
+    public enum RowsType
+    {
+        NONE(0),
+        TOMBSTONE(1),
+        DATA(2),
+        ANY(3);
+
+        private static final RowsType[] variants = {NONE, TOMBSTONE, DATA, ANY};
+        private final int flag;
+
+        RowsType(int flag)
+        {
+            this.flag = flag;
+        }
+
+        public RowsType or(RowsType type)
+        {
+            return variants[this.flag | type.flag];
+        }
+
+        public RowsType or(Row row)
+        {
+            return or(getType(row));
+        }
+
+        public static RowsType getType(Row row)
+        {
+            if (row == null)
+            {
+                return RowsType.NONE;
+            }
+
+            if (row.kind() == Unfiltered.Kind.ROW)
+            {
+                if (row.deletion().isLive())
+                {
+                    return DATA;
+                }
+                else
+                {
+                    return TOMBSTONE;
+                }
+            }
+            else
+            {
+                return TOMBSTONE;
+            }
+        }
+    }
 
     protected final DecoratedKey partitionKey;
 
@@ -51,14 +101,17 @@ public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
         final Object[] tree;
         final Row staticRow;
         final EncodingStats stats;
+        // rowstype for all the rows in this partition.
+        final RowsType rowsType;
 
-        Holder(RegularAndStaticColumns columns, Object[] tree, DeletionInfo deletionInfo, Row staticRow, EncodingStats stats)
+        Holder(RegularAndStaticColumns columns, Object[] tree, DeletionInfo deletionInfo, Row staticRow, EncodingStats stats, RowsType rowsType)
         {
             this.columns = columns;
             this.tree = tree;
             this.deletionInfo = deletionInfo;
             this.staticRow = staticRow == null ? Rows.EMPTY_STATIC_ROW : staticRow;
             this.stats = stats;
+            this.rowsType = rowsType;
         }
     }
 
@@ -280,19 +333,27 @@ public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
         builder.auto(!ordered);
         MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(iterator.partitionLevelDeletion(), metadata.comparator, reversed);
 
+        RowsType type = RowsType.NONE;
         while (iterator.hasNext())
         {
             Unfiltered unfiltered = iterator.next();
             if (unfiltered.kind() == Unfiltered.Kind.ROW)
-                builder.add((Row)unfiltered);
+            {
+                Row row = (Row) unfiltered;
+                builder.add(row);
+                type = type.or(row);
+            }
             else
-                deletionBuilder.add((RangeTombstoneMarker)unfiltered);
+            {
+                deletionBuilder.add((RangeTombstoneMarker) unfiltered);
+                type = type.or(RowsType.TOMBSTONE);
+            }
         }
 
         if (reversed)
             builder.reverse();
 
-        return new Holder(columns, builder.build(), deletionBuilder.build(), iterator.staticRow(), iterator.stats());
+        return new Holder(columns, builder.build(), deletionBuilder.build(), iterator.staticRow(), iterator.stats(), type);
     }
 
     // Note that when building with a RowIterator, deletion will generally be LIVE, but we allow to pass it nonetheless because PartitionUpdate
@@ -305,8 +366,13 @@ public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
 
         BTree.Builder<Row> builder = BTree.builder(metadata.comparator, initialRowCapacity);
         builder.auto(false);
+        RowsType type = RowsType.NONE;
         while (rows.hasNext())
-            builder.add(rows.next());
+        {
+            Row row = rows.next();
+            builder.add(row);
+            type = type.or(row);
+        }
 
         if (reversed)
             builder.reverse();
@@ -315,7 +381,7 @@ public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
         Object[] tree = builder.build();
         EncodingStats stats = buildEncodingStats ? EncodingStats.Collector.collect(staticRow, BTree.iterator(tree), deletion)
                                                  : EncodingStats.NO_STATS;
-        return new Holder(columns, tree, deletion, staticRow, stats);
+        return new Holder(columns, tree, deletion, staticRow, stats, type);
     }
 
     @Override

@@ -101,7 +101,7 @@ public class SSTableTxnWriter extends Transactional.AbstractTransactional implem
     @SuppressWarnings("resource") // log and writer closed during doPostCleanup
     public static SSTableTxnWriter create(ColumnFamilyStore cfs, Descriptor descriptor, long keyCount, long repairedAt, UUID pendingRepair, boolean isTransient, int sstableLevel, SerializationHeader header)
     {
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE, cfs.metadata().params.timeOrderedKey);
         SSTableMultiWriter writer = cfs.createSSTableMultiWriter(descriptor, keyCount, repairedAt, pendingRepair, isTransient, sstableLevel, header, txn);
         return new SSTableTxnWriter(txn, writer);
     }
@@ -119,7 +119,7 @@ public class SSTableTxnWriter extends Transactional.AbstractTransactional implem
     {
 
         ColumnFamilyStore cfs = Keyspace.open(metadata.keyspace).getColumnFamilyStore(metadata.name);
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE, cfs.metadata().params.timeOrderedKey);
         SSTableMultiWriter writer;
         try
         {
@@ -147,8 +147,8 @@ public class SSTableTxnWriter extends Transactional.AbstractTransactional implem
                                           Collection<Index> indexes)
     {
         // if the column family store does not exist, we create a new default SSTableMultiWriter to use:
-        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE);
-        MetadataCollector collector = new MetadataCollector(metadata.get().comparator).sstableLevel(sstableLevel);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE, metadata.get().params.timeOrderedKey);
+        MetadataCollector collector = new MetadataCollector(metadata.get().comparator, metadata.get().params.timeOrderedKey).sstableLevel(sstableLevel);
         SSTableMultiWriter writer = SimpleSSTableMultiWriter.create(descriptor, keyCount, repairedAt, pendingRepair, isTransient, metadata, collector, header, indexes, txn);
         return new SSTableTxnWriter(txn, writer);
     }

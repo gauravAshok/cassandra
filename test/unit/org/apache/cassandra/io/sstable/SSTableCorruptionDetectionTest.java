@@ -101,7 +101,7 @@ public class SSTableCorruptionDetectionTest extends SSTableWriterTestBase
 
         truncate(cfs);
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
-        txn = LifecycleTransaction.offline(OperationType.WRITE);
+        txn = LifecycleTransaction.offline(OperationType.WRITE, cfs.metadata().params.timeOrderedKey);
 
         // Setting up/writing large values is an expensive operation, we only want to do it once per run
         writer = getWriter(cfs, dir, txn);

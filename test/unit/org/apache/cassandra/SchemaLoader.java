@@ -766,6 +766,39 @@ public static TableMetadata.Builder clusteringSASICFMD(String ksName, String cfN
         return builder.indexes(indexes.build());
     }
 
+    public static class TimeOrderedKeyCFMD {
+        public static TableMetadata.Builder standardCFMD(String ksName, String cfName)
+        {
+            return standardCFMD(ksName, cfName, 1, AsciiType.instance);
+        }
+
+        public static TableMetadata.Builder standardCFMD(String ksName, String cfName, int columnCount)
+        {
+            return standardCFMD(ksName, cfName, columnCount, AsciiType.instance);
+        }
+
+        public static TableMetadata.Builder standardCFMD(String ksName, String cfName, int columnCount, AbstractType<?> valType)
+        {
+            return standardCFMD(ksName, cfName, columnCount, valType, AsciiType.instance);
+        }
+
+        public static TableMetadata.Builder standardCFMD(String ksName, String cfName, int columnCount, AbstractType<?> valType, AbstractType<?> clusteringType)
+        {
+            TableMetadata.Builder builder;
+            builder = TableMetadata.builder(ksName, cfName)
+                                        .addPartitionKeyColumn("key", TimestampType.instance)
+                                        .addPartitionKeyColumn("duration_ms", Int32Type.instance);
+
+            if(clusteringType != null)
+                builder = builder.addClusteringColumn("name", clusteringType);
+
+            for (int i = 0; i < columnCount; i++)
+                builder.addRegularColumn("val" + i, valType);
+
+            return builder.compression(getCompressionParameters()).timeOrderedKey(true);
+        }
+    }
+
     public static CompressionParams getCompressionParameters()
     {
         return getCompressionParameters(null);
